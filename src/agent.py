@@ -3,9 +3,10 @@
 import asyncio
 import json
 import logging
-import subprocess
 from dataclasses import dataclass
 from typing import Callable, Optional
+
+from src.config import AgentConfig
 
 logger = logging.getLogger(__name__)
 
@@ -22,14 +23,15 @@ class AgentHandle:
 
     def __init__(self, process: asyncio.subprocess.Process):
         self.process = process
-        self._request_id = 0
-        self._pending: dict[int, asyncio.Future] = {}
-        self._notification_callback: Optional[Callable] = None
-        self._permission_callback: Optional[Callable] = None
-        self._read_task: Optional[asyncio.Task] = None
-        self._lock = asyncio.Lock()
+        self._request_id = 0                                    # Auto-incrementing JSON-RPC request ID
+        self._pending: dict[int, asyncio.Future] = {}           # request_id → Future, resolved by _read_loop
+        self._notification_callback: Optional[Callable] = None  # Called on agent notifications (e.g. streaming chunks)
+        self._permission_callback: Optional[Callable] = None    # Called on agent permission requests
+        self._read_task: Optional[asyncio.Task] = None          # Background task running _read_loop
+        self._lock = asyncio.Lock()                             # Guards _request_id increment
+        self._closed = False                                    # Set when _read_loop exits
 
-    async def start(self, notification_callback, permission_callback):
+    def start(self, notification_callback, permission_callback):
         self._notification_callback = notification_callback
         self._permission_callback = permission_callback
         self._read_task = asyncio.create_task(self._read_loop())
@@ -38,7 +40,7 @@ class AgentHandle:
         """Read JSON-RPC messages from agent stdout."""
         try:
             while True:
-                line = await self.process.stdout.readline()
+                line = await self.process.stdout.readline()  # type: ignore[union-attr]
                 if not line:
                     break
                 line = line.decode().strip()
@@ -50,7 +52,7 @@ class AgentHandle:
                     logger.warning("Invalid JSON from agent: %s", line[:200])
                     continue
 
-                if "id" in msg and "id" in msg:
+                if "id" in msg and "method" not in msg:
                     # Response to a request
                     req_id = msg["id"]
                     if req_id in self._pending:
@@ -61,6 +63,16 @@ class AgentHandle:
             pass
         except Exception as e:
             logger.error("Agent read loop error: %s", e)
+        finally:
+            self._reject_all_pending()
+
+    def _reject_all_pending(self):
+        """Reject all pending futures with ConnectionError."""
+        self._closed = True
+        for future in self._pending.values():
+            if not future.done():
+                future.set_exception(ConnectionError("Agent process exited"))
+        self._pending.clear()
 
     async def _handle_server_message(self, msg: dict):
         method = msg.get("method", "")
@@ -69,7 +81,7 @@ class AgentHandle:
 
         if method == "notifications/session":
             if self._notification_callback:
-                self._notification_callback(params)
+                await self._notification_callback(params)
         elif method == "requestPermission":
             if self._permission_callback and msg_id is not None:
                 result = await self._permission_callback(params)
@@ -82,11 +94,14 @@ class AgentHandle:
         await self._write(response)
 
     async def _send_request(self, method: str, params: dict) -> dict:
+        if self._closed:
+            raise ConnectionError("Agent process already exited")
+
         async with self._lock:
             self._request_id += 1
             req_id = self._request_id
 
-        future = asyncio.get_event_loop().create_future()
+        future = asyncio.get_running_loop().create_future()
         self._pending[req_id] = future
 
         msg = {"jsonrpc": "2.0", "id": req_id, "method": method, "params": params}
@@ -96,8 +111,8 @@ class AgentHandle:
 
     async def _write(self, msg: dict):
         data = json.dumps(msg) + "\n"
-        self.process.stdin.write(data.encode())
-        await self.process.stdin.drain()
+        self.process.stdin.write(data.encode())  # type: ignore[union-attr]
+        await self.process.stdin.drain()  # type: ignore[union-attr]
 
     async def initialize(self) -> dict:
         return await self._send_request("initialize", {
@@ -157,8 +172,8 @@ class AgentManager:
     """Manages spawned agent processes and ACP communication."""
 
     def __init__(self, notification_callback, permission_callback):
-        self._agents: dict[str, AgentHandle] = {}  # session_id -> handle
-        self._agent_configs: dict[str, dict] = {}
+        self._agents: dict[str, AgentHandle] = {}
+        self._agent_configs: dict[str, AgentConfig] = {}
         self._auto_approve: dict[str, bool] = {}
         self._notification_callback = notification_callback
         self._permission_callback = permission_callback
@@ -186,7 +201,7 @@ class AgentManager:
         )
 
         handle = AgentHandle(process)
-        await handle.start(self._notification_callback, self._permission_callback)
+        handle.start(self._notification_callback, self._permission_callback)
 
         # Initialize
         init_resp = await handle.initialize()

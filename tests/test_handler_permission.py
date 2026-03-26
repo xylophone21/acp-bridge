@@ -9,7 +9,7 @@ class FakeFeishu:
     def __init__(self):
         self.messages = []
 
-    def send_message(self, channel, thread_id, text):
+    async def send_message(self, channel, thread_id, text):
         self.messages.append((channel, thread_id, text))
 
 

@@ -4,3 +4,5 @@ __pycache__/
 .env
 target/
 .pytest_cache/
+.hypothesis/
+bridge.toml

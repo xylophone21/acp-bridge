@@ -1,13 +1,15 @@
 """Event router — dispatches incoming Feishu events to appropriate handlers."""
 
 import logging
-from typing import Optional
+from typing import Callable, Coroutine
 
+from src.agent import AgentManager
+from src.config import Config
 from src.feishu import FeishuConnection, FeishuEvent
 from src.handler_command import handle_command
 from src.handler_message import handle_message
 from src.handler_permission import handle_permission_response
-from src.handler_shell import handle_shell_command
+from src.session import SessionManager
 
 logger = logging.getLogger(__name__)
 
@@ -15,47 +17,49 @@ logger = logging.getLogger(__name__)
 async def handle_event(
     event: FeishuEvent,
     feishu: FeishuConnection,
-    config,
-    agent_manager,
-    session_manager,
+    config: Config,
+    agent_manager: AgentManager,
+    session_manager: SessionManager,
     pending_permissions: dict,
-    notification_flush_callback,
+    notification_flush_callback: Callable[[str], Coroutine],
 ):
     text = event.text
-    channel = event.chat_id
-    ts = event.message_id
-    thread_ts = event.parent_id
+    root_message_id = event.root_id
 
-    # Check user permission (Feishu events don't carry user ID in the same way,
-    # but we keep the structure for future use)
-    # allowed = config.bridge.allowed_users
-    # if allowed and user not in allowed: ...
-
-    thread_key = thread_ts or ts
-
-    # Check pending permission requests first
-    if thread_key in pending_permissions:
-        perm = pending_permissions.pop(thread_key)
+    # Check pending permission requests first (keyed by root_message_id)
+    if root_message_id in pending_permissions:
+        perm = pending_permissions.pop(root_message_id)
         option_id = await handle_permission_response(
-            text, perm["options"], feishu, channel, thread_key
+            text, perm["options"], feishu, event.conversation_id, event.message_id
         )
         perm["future"].set_result(option_id)
         return
 
-    # Shell commands (!)
-    if text.strip().startswith("!"):
-        await handle_shell_command(text, channel, thread_ts, feishu, config, session_manager)
-        return
+    # Look up existing session by root_message_id
+    session = session_manager.get_session_by_root(root_message_id)
+    is_command = text.strip().startswith("#")
 
-    # Bot commands (#)
-    if text.strip().startswith("#"):
-        await handle_command(
-            text, channel, ts, thread_ts, feishu, config, agent_manager, session_manager
-        )
-        return
+    if session is not None:
+        # --- Session exists ---
+        if is_command:
+            await handle_command(event, feishu, config, agent_manager, session_manager)
+        else:
+            await handle_message(
+                event, feishu, config, agent_manager, session_manager,
+                notification_flush_callback,
+            )
+    else:
+        # --- No session ---
+        if not event.is_mention_bot:
+            # In DMs, treat all messages as if bot was mentioned
+            if event.chat_type != "p2p":
+                # Not mentioned in group → ignore silently
+                return
 
-    # Regular messages — forward to agent
-    await handle_message(
-        text, channel, ts, thread_ts, feishu, agent_manager, session_manager,
-        notification_flush_callback,
-    )
+        if is_command:
+            await handle_command(event, feishu, config, agent_manager, session_manager)
+        else:
+            await handle_message(
+                event, feishu, config, agent_manager, session_manager,
+                notification_flush_callback,
+            )

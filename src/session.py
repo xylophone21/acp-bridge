@@ -1,106 +1,135 @@
 """Session manager for tracking chat thread to agent session mappings."""
 
-import asyncio
+import collections
+import logging
+import time
 from dataclasses import dataclass, field
 from typing import Optional
+
+from src.config import Config
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
 class SessionState:
     session_id: str
-    agent_name: str
-    workspace: str
-    auto_approve: bool
-    channel: str  # chat_id
+    conversation_id: str
     busy: bool = False
-    initial_ts: str = ""  # message_id of the #new message
+    trigger_message_id: str = ""
     config_options: Optional[list] = None
-    modes: Optional[dict] = None
-    models: Optional[dict] = None
+    summary: str = ""
+    last_active: float = 0.0
+    last_bot_message_id: str = ""
+    # User -> Agent buffer: messages that arrive while agent is busy.
+    # Elements: (timestamp, sender_id, text)
+    message_buffer: list[tuple[float, str, str]] = field(default_factory=list)
 
 
 class SessionManager:
-    """Manages active sessions between chat threads and agents."""
+    """Manages active sessions. All methods are sync (no I/O)."""
 
-    def __init__(self, config):
-        self._sessions: dict[str, SessionState] = {}
+    def __init__(self, config: Config):
+        self._sessions: collections.OrderedDict[str, SessionState] = collections.OrderedDict()
         self._config = config
-        self._lock = asyncio.Lock()
 
-    async def create_session(
-        self,
-        thread_key: str,
-        agent_name: str,
-        workspace: Optional[str],
-        channel: str,
-        session_id: str,
-    ) -> SessionState:
-        workspace = workspace or self._config.bridge.default_workspace
-
-        agent_config = next(
-            (a for a in self._config.agents if a.name == agent_name), None
-        )
-        if agent_config is None:
-            raise ValueError(f"Agent not found: {agent_name}")
-
+    def create_session(self, root_message_id: str, session_id: str,
+                       conversation_id: str, trigger_text: str,
+                       config_options: Optional[list] = None,
+                       ) -> tuple[SessionState, Optional[SessionState]]:
+        """Create session, evict LRU if at capacity. Returns (new, evicted)."""
+        evicted = None
+        if len(self._sessions) >= self._config.bridge.max_sessions:
+            evicted = self._evict_lru()
+            if evicted is None:
+                raise RuntimeError("All sessions are busy, cannot evict")
         session = SessionState(
-            session_id=session_id,
-            agent_name=agent_name,
-            workspace=workspace,
-            auto_approve=agent_config.auto_approve,
-            channel=channel,
-            initial_ts=thread_key,
+            session_id=session_id, conversation_id=conversation_id,
+            trigger_message_id=root_message_id, summary=trigger_text[:20],
+            last_active=time.time(), config_options=config_options,
         )
+        self._sessions[root_message_id] = session
+        return session, evicted
 
-        async with self._lock:
-            self._sessions[thread_key] = session
-        return session
+    def touch(self, root_message_id: str):
+        session = self._sessions.get(root_message_id)
+        if session is None:
+            return
+        session.last_active = time.time()
+        self._sessions.move_to_end(root_message_id)
 
-    async def get_session(self, thread_key: str) -> Optional[SessionState]:
-        return self._sessions.get(thread_key)
-
-    async def set_busy(self, thread_key: str, busy: bool):
-        async with self._lock:
-            session = self._sessions.get(thread_key)
-            if session is None:
-                raise ValueError(f"Session not found: {thread_key}")
-            session.busy = busy
-
-    async def end_session(self, thread_key: str):
-        async with self._lock:
-            if thread_key not in self._sessions:
-                raise ValueError(f"Session not found: {thread_key}")
-            del self._sessions[thread_key]
-
-    async def find_by_session_id(
-        self, session_id: str
-    ) -> Optional[tuple[str, SessionState]]:
-        for key, session in self._sessions.items():
-            if session.session_id == session_id:
-                return (key, session)
+    def _evict_lru(self) -> Optional[SessionState]:
+        """Remove and return the least recently used non-busy session."""
+        for key in list(self._sessions.keys()):
+            s = self._sessions[key]
+            if not s.busy:
+                del self._sessions[key]
+                return s
         return None
 
-    async def update_config_options(self, thread_key: str, config_options: list):
-        async with self._lock:
-            session = self._sessions.get(thread_key)
-            if session is None:
-                raise ValueError(f"Session not found: {thread_key}")
-            session.config_options = config_options
+    def evict_ttl_expired(self) -> list[SessionState]:
+        """Evict sessions that have been idle longer than TTL.
 
-    async def update_modes(self, thread_key: str, modes: dict):
-        async with self._lock:
-            session = self._sessions.get(thread_key)
-            if session is None:
-                raise ValueError(f"Session not found: {thread_key}")
-            session.modes = modes
+        Busy sessions get 2x TTL as a grace period — if they still exceed
+        that, they are likely stuck and should be cleaned up.
+        """
+        ttl = self._config.bridge.session_ttl_minutes * 60
+        now = time.time()
+        expired: list[SessionState] = []
+        for key in list(self._sessions.keys()):
+            s = self._sessions[key]
+            idle_time = now - s.last_active
+            threshold = ttl * 2 if s.busy else ttl
+            if idle_time > threshold:
+                del self._sessions[key]
+                expired.append(s)
+        return expired
 
-    async def update_models(self, thread_key: str, models: dict):
-        async with self._lock:
-            session = self._sessions.get(thread_key)
-            if session is None:
-                raise ValueError(f"Session not found: {thread_key}")
-            session.models = models
+    def buffer_message(self, root_message_id: str, sender: str, text: str):
+        s = self._sessions.get(root_message_id)
+        if s is None:
+            raise ValueError(f"Session not found: {root_message_id}")
+        s.message_buffer.append((time.time(), sender, text))
 
-    @property
-    def sessions(self) -> dict[str, SessionState]:
-        return self._sessions
+    def flush_buffer(self, root_message_id: str) -> Optional[str]:
+        s = self._sessions.get(root_message_id)
+        if s is None:
+            return None
+        if not s.message_buffer:
+            return None
+        msgs = sorted(s.message_buffer, key=lambda m: m[0])
+        s.message_buffer = []
+        return "\n".join(f"[{sender}]: {text}" for _, sender, text in msgs)
+
+    def get_session_by_root(self, key: str) -> Optional[SessionState]:
+        return self._sessions.get(key)
+
+    def set_busy(self, key: str, busy: bool):
+        s = self._sessions.get(key)
+        if s is None:
+            raise ValueError(f"Session not found: {key}")
+        s.busy = busy
+
+    def end_session(self, key: str):
+        if key not in self._sessions:
+            raise ValueError(f"Session not found: {key}")
+        del self._sessions[key]
+
+    def find_by_session_id(self, session_id: str) -> Optional[tuple[str, SessionState]]:
+        for key, s in self._sessions.items():
+            if s.session_id == session_id:
+                return (key, s)
+        return None
+
+    def update_config_options(self, key: str, config_options: list):
+        s = self._sessions.get(key)
+        if s is None:
+            raise ValueError(f"Session not found: {key}")
+        s.config_options = config_options
+
+    def session_count(self) -> int:
+        return len(self._sessions)
+
+    def list_sessions(self) -> list[SessionState]:
+        """Return a snapshot list of all sessions."""
+        return list(self._sessions.values())

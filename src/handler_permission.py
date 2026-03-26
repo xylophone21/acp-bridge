@@ -1,6 +1,9 @@
 """Permission response handler."""
 
 import logging
+from typing import Optional
+
+from src.feishu import FeishuConnection
 
 logger = logging.getLogger(__name__)
 
@@ -8,15 +11,15 @@ logger = logging.getLogger(__name__)
 async def handle_permission_response(
     text: str,
     options: list[dict],
-    feishu,
-    channel: str,
+    feishu: FeishuConnection,
+    conversation_id: str,
     thread_key: str,
-) -> str | None:
+) -> Optional[str]:
     """Handle user's response to a permission request. Returns selected option_id or None."""
     text = text.strip()
 
     if text.lower() == "deny":
-        feishu.send_message(channel, thread_key, "❌ Permission denied")
+        await feishu.send_message(conversation_id, thread_key, "❌ Permission denied")
         return None
 
     try:
@@ -24,10 +27,10 @@ async def handle_permission_response(
         if 1 <= choice <= len(options):
             selected = options[choice - 1]
             name = selected.get("name", "")
-            feishu.send_message(channel, thread_key, f"✅ Approved: {name}")
+            await feishu.send_message(conversation_id, thread_key, f"✅ Approved: {name}")
             return selected.get("optionId")
     except ValueError:
         pass
 
-    feishu.send_message(channel, thread_key, "❌ Invalid response. Permission denied.")
+    await feishu.send_message(conversation_id, thread_key, "❌ Invalid response. Permission denied.")
     return None

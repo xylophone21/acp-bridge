@@ -18,6 +18,10 @@ class BridgeConfig:
     default_workspace: str = "~"
     auto_approve: bool = False
     allowed_users: list[str] = field(default_factory=list)
+    max_sessions: int = 10
+    session_ttl_minutes: int = 60
+    show_thinking: bool = False       # Send agent thinking/reasoning to user
+    show_intermediate: bool = False   # Send intermediate output (before tool calls)
 
 
 @dataclass
@@ -36,7 +40,7 @@ class AgentConfig:
 class Config:
     feishu: FeishuConfig
     bridge: BridgeConfig
-    agents: list[AgentConfig]
+    agent: AgentConfig
 
     @staticmethod
     def load(path: str) -> "Config":
@@ -44,13 +48,11 @@ class Config:
             data = toml.load(f)
 
         feishu = FeishuConfig(**data["feishu"])
-        bridge = BridgeConfig(**{k: v for k, v in data.get("bridge", {}).items()})
+        bridge = BridgeConfig(**data.get("bridge", {}))
 
-        agents = []
-        for a in data.get("agents", []):
-            agents.append(AgentConfig(**a))
+        agent = AgentConfig(**data["agent"])
 
-        config = Config(feishu=feishu, bridge=bridge, agents=agents)
+        config = Config(feishu=feishu, bridge=bridge, agent=agent)
         config._validate()
         return config
 
@@ -61,15 +63,19 @@ class Config:
 
         template = """\
 [feishu]
-app_id = "your-app-id"
-app_secret = "your-app-secret"
+app_id = "your_app_id"
+app_secret = "your_app_secret"
 
 [bridge]
 default_workspace = "~"
 auto_approve = false
 allowed_users = []
+max_sessions = 10
+session_ttl_minutes = 60
+show_thinking = false
+show_intermediate = false
 
-[[agents]]
+[agent]
 name = "kiro"
 description = "Kiro CLI - https://kiro.dev/cli/"
 command = "kiro-cli"
@@ -81,7 +87,6 @@ auto_approve = false
         print(f"Config scaffold written to: {path}")
 
     def _validate(self):
-        assert self.agents, "At least one agent must be configured"
-        for agent in self.agents:
-            assert agent.name, "Agent name cannot be empty"
-            assert agent.command, "Agent command cannot be empty"
+        assert self.agent, "An [agent] section must be configured"
+        assert self.agent.name, "Agent name cannot be empty"
+        assert self.agent.command, "Agent command cannot be empty"
