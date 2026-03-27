@@ -231,8 +231,9 @@ class TestHandleEvent:
     @pytest.mark.asyncio
     async def test_pending_permission_response_with_root_message_id(self):
         """Pending permission response handled correctly with root_message_id."""
-        from src.handler import handle_event
         from acp.schema import PermissionOption
+
+        from src.handler import handle_event
 
         feishu = FakeFeishu()
         future = asyncio.get_event_loop().create_future()
@@ -260,8 +261,9 @@ class TestHandleEvent:
     @pytest.mark.asyncio
     async def test_pending_permission_no_root_id_uses_message_id(self):
         """Permission keyed by message_id when root_id is absent."""
-        from src.handler import handle_event
         from acp.schema import PermissionOption
+
+        from src.handler import handle_event
 
         feishu = FakeFeishu()
         future = asyncio.get_event_loop().create_future()

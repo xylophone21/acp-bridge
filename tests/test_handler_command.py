@@ -9,7 +9,6 @@ from src.feishu import FeishuEvent
 from src.handler_command import HELP_MESSAGE, _format_relative_time, handle_command
 from src.session import SessionState
 
-
 # ---------------------------------------------------------------------------
 # Fakes
 # ---------------------------------------------------------------------------

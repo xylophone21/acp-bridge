@@ -10,7 +10,6 @@ from src.feishu import FeishuEvent
 from src.handler_message import _init_locks, handle_message
 from src.session import SessionState
 
-
 # --- Fakes ---
 
 class FakeFeishu:

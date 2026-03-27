@@ -85,6 +85,41 @@ class _BridgeClient(Client):
         logger.debug("Agent ext method: %s", method)
         return {}
 
+    async def write_text_file(self, content: str, path: str, session_id: str, **kwargs: Any) -> None:
+        return None
+
+    async def read_text_file(
+        self, path: str, session_id: str, limit: int | None = None, line: int | None = None, **kwargs: Any
+    ) -> Any:
+        raise NotImplementedError
+
+    async def create_terminal(
+        self,
+        command: str,
+        session_id: str,
+        args: list[str] | None = None,
+        cwd: str | None = None,
+        env: Any = None,
+        output_byte_limit: int | None = None,
+        **kwargs: Any,
+    ) -> Any:
+        raise NotImplementedError
+
+    async def terminal_output(self, session_id: str, terminal_id: str, **kwargs: Any) -> Any:
+        raise NotImplementedError
+
+    async def release_terminal(self, session_id: str, terminal_id: str, **kwargs: Any) -> None:
+        return None
+
+    async def wait_for_terminal_exit(self, session_id: str, terminal_id: str, **kwargs: Any) -> Any:
+        raise NotImplementedError
+
+    async def kill_terminal(self, session_id: str, terminal_id: str, **kwargs: Any) -> None:
+        return None
+
+    def on_connect(self, conn: Any) -> None:
+        pass
+
 
 class _AgentEntry:
     """Holds a live agent connection and its exit stack."""
@@ -170,7 +205,7 @@ class AgentManager:
 
     async def prompt(self, session_id: str, content: list[dict[str, Any]]) -> dict[str, Any]:
         entry = self._get_entry(session_id)
-        prompt_content = [TextContentBlock(**c) for c in content]
+        prompt_content: list[Any] = [TextContentBlock(**c) for c in content]
         resp = await entry.conn.prompt(prompt=prompt_content, session_id=session_id)
         return resp.model_dump(mode="json", by_alias=True, exclude_none=True)
 
