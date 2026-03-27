@@ -41,6 +41,12 @@ async def handle_message(
     created = False
 
     if session is None:
+        # Show typing indicator early, before session creation
+        try:
+            early_reaction_id = await feishu.add_reaction(reply_id, "Typing")
+        except Exception:
+            early_reaction_id = None
+
         session, created = await _ensure_session(
             root_message_id,
             text,
@@ -52,6 +58,11 @@ async def handle_message(
             session_manager,
         )
         if session is None:
+            if early_reaction_id:
+                try:
+                    await feishu.remove_reaction(reply_id, early_reaction_id)
+                except Exception:
+                    pass
             return
 
     # --- Session exists and is busy: silent buffer ---
@@ -63,10 +74,22 @@ async def handle_message(
     if not created:
         session_manager.touch(root_message_id)
         session_manager.set_busy(root_message_id, True)
+        early_reaction_id = None
 
-    _start_prompt(session, text, root_message_id, reply_id, conversation_id,
-                  event, feishu, config, agent_manager, session_manager,
-                  notification_flush_callback)
+    _start_prompt(
+        session,
+        text,
+        root_message_id,
+        reply_id,
+        conversation_id,
+        event,
+        feishu,
+        config,
+        agent_manager,
+        session_manager,
+        notification_flush_callback,
+        typing_reaction_id=early_reaction_id,
+    )
 
 
 async def _ensure_session(
@@ -93,9 +116,16 @@ async def _ensure_session(
         try:
             agent_cfg = config.agent
             workspace = expand_path(config.bridge.default_workspace)
-            result = await agent_manager.new_session(
-                agent_cfg.name, workspace, agent_cfg.auto_approve
+            logger.debug("Starting new_session for %s", root_message_id)
+            result = await asyncio.wait_for(
+                agent_manager.new_session(agent_cfg.name, workspace, agent_cfg.auto_approve),
+                timeout=30,
             )
+            logger.debug("new_session returned for %s: %s", root_message_id, list(result.keys()))
+        except asyncio.TimeoutError:
+            logger.error("new_session timed out for %s", root_message_id)
+            await feishu.send_message(conversation_id, reply_id, "Error: agent session creation timed out")
+            return None, False
         except Exception as e:
             logger.error("Failed to start agent: %s", e)
             await feishu.send_message(conversation_id, reply_id, f"Error: {e}")
@@ -131,17 +161,29 @@ async def _ensure_session(
         return session, True
 
 
-def _start_prompt(session, text, root_message_id, reply_id, conversation_id,
-                  event, feishu, config, agent_manager, session_manager,
-                  notification_flush_callback):
+def _start_prompt(
+    session,
+    text,
+    root_message_id,
+    reply_id,
+    conversation_id,
+    event,
+    feishu,
+    config,
+    agent_manager,
+    session_manager,
+    notification_flush_callback,
+    typing_reaction_id=None,
+):
     """Launch the prompt task. Session must already be marked busy."""
 
     async def _do_prompt():
-        typing_reaction_id = None
-        try:
-            typing_reaction_id = await feishu.add_reaction(reply_id, "Typing")
-        except Exception:
-            logger.debug("Failed to add typing indicator", exc_info=True)
+        nonlocal typing_reaction_id
+        if typing_reaction_id is None:
+            try:
+                typing_reaction_id = await feishu.add_reaction(reply_id, "Typing")
+            except Exception:
+                logger.debug("Failed to add typing indicator", exc_info=True)
 
         content = [{"type": "text", "text": text}]
         try:
@@ -170,11 +212,16 @@ def _start_prompt(session, text, root_message_id, reply_id, conversation_id,
                 merged = session_manager.flush_buffer(root_message_id)
                 if merged:
                     from dataclasses import replace
+
                     merged_event = replace(event, text=merged)
                     asyncio.create_task(
                         handle_message(
-                            merged_event, feishu, config, agent_manager,
-                            session_manager, notification_flush_callback,
+                            merged_event,
+                            feishu,
+                            config,
+                            agent_manager,
+                            session_manager,
+                            notification_flush_callback,
                         )
                     )
             except Exception as e:
@@ -185,7 +232,10 @@ def _start_prompt(session, text, root_message_id, reply_id, conversation_id,
 
 async def _apply_defaults(agent_cfg, session, agent_manager) -> None:
     """Apply default_mode and default_model to a newly created session."""
-    for category, value in [("mode", agent_cfg.default_mode), ("model", agent_cfg.default_model)]:
+    for category, value in [
+        ("mode", agent_cfg.default_mode),
+        ("model", agent_cfg.default_model),
+    ]:
         if not value:
             continue
         value = value.rstrip("!")

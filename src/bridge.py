@@ -2,8 +2,19 @@
 
 import asyncio
 import logging
+import os
 from collections import defaultdict
 from typing import Optional
+
+from acp.schema import (
+    AgentMessageChunk,
+    AgentPlanUpdate,
+    AgentThoughtChunk,
+    PermissionOption,
+    TextContentBlock,
+    ToolCallProgress,
+    ToolCallStart,
+)
 
 from src.agent import AgentManager
 from src.config import Config
@@ -15,7 +26,9 @@ logger = logging.getLogger(__name__)
 
 
 async def _handle_evicted_sessions(
-    expired: list, agent_manager: AgentManager, feishu: FeishuConnection,
+    expired: list,
+    agent_manager: AgentManager,
+    feishu: FeishuConnection,
 ) -> None:
     """Process evicted sessions: terminate agent processes and add DONE reactions."""
     for session in expired:
@@ -27,19 +40,29 @@ async def _handle_evicted_sessions(
         try:
             await feishu.add_reaction(session.trigger_message_id, "DONE")
         except Exception as e:
-            logger.error("Failed to add reaction on trigger message %s: %s", session.trigger_message_id, e)
+            logger.error(
+                "Failed to add reaction on trigger message %s: %s",
+                session.trigger_message_id,
+                e,
+            )
 
         if session.last_bot_message_id:
             try:
                 await feishu.add_reaction(session.last_bot_message_id, "DONE")
             except Exception as e:
-                logger.error("Failed to add reaction on bot message %s: %s", session.last_bot_message_id, e)
+                logger.error(
+                    "Failed to add reaction on bot message %s: %s",
+                    session.last_bot_message_id,
+                    e,
+                )
 
         logger.info("TTL evicted session %s (summary: %s)", session.session_id, session.summary)
 
 
 async def _ttl_eviction_loop(
-    session_manager: SessionManager, agent_manager: AgentManager, feishu: FeishuConnection,
+    session_manager: SessionManager,
+    agent_manager: AgentManager,
+    feishu: FeishuConnection,
 ) -> None:
     """Background task: every 60 seconds, evict TTL-expired sessions."""
     while True:
@@ -54,7 +77,12 @@ async def _ttl_eviction_loop(
 async def run_bridge(config: Config):
     logger.info("Default workspace: %s", config.bridge.default_workspace)
     logger.info("Auto-approve: %s", config.bridge.auto_approve)
-    logger.info("Agent: %s (%s): %s", config.agent.name, config.agent.command, config.agent.description)
+    logger.info(
+        "Agent: %s (%s): %s",
+        config.agent.name,
+        config.agent.command,
+        config.agent.description,
+    )
 
     # Agent → Feishu buffers: accumulate streaming chunks from ACP agent,
     # flushed to Feishu when a tool call or other event interrupts the stream.
@@ -70,49 +98,58 @@ async def run_bridge(config: Config):
     feishu = FeishuConnection(config.feishu.app_id, config.feishu.app_secret)
     session_manager = SessionManager(config)
 
-    async def on_notification(params: dict):
+    async def on_notification(session_id: str, update):
         """Handle agent session notifications (message chunks, tool calls, etc.)."""
-        session_id = params.get("sessionId", "")
-        update = params.get("update", {})
-        update_type = update.get("type", "")
-
-        if update_type == "agentMessageChunk":
-            content = update.get("content", {})
-            if content.get("type") == "text":
-                agent_text_chunks[session_id] += content.get("text", "")
-        elif update_type == "agentThoughtChunk":
+        if isinstance(update, AgentMessageChunk):
+            if isinstance(update.content, TextContentBlock):
+                agent_text_chunks[session_id] += update.content.text or ""
+        elif isinstance(update, AgentThoughtChunk):
             if config.bridge.show_thinking:
-                content = update.get("content", {})
-                if content.get("type") == "text":
-                    agent_thought_chunks[session_id] += content.get("text", "")
-        elif update_type == "toolCall":
+                if isinstance(update.content, TextContentBlock):
+                    agent_thought_chunks[session_id] += update.content.text or ""
+        elif isinstance(update, ToolCallStart):
             if config.bridge.show_intermediate:
-                # Flush accumulated text before tool call
-                await _flush_agent_chunks(session_id, feishu, session_manager, agent_text_chunks, agent_thought_chunks)
-                title = update.get("title", "")
+                await _flush_agent_chunks(
+                    session_id,
+                    feishu,
+                    session_manager,
+                    agent_text_chunks,
+                    agent_thought_chunks,
+                )
+                title = update.title or ""
                 await _send_tool_msg(feishu, session_manager, session_id, f"🔧 Tool: {title}")
             else:
-                # Discard intermediate output — agent will produce new output after tool
                 agent_text_chunks.pop(session_id, None)
                 agent_thought_chunks.pop(session_id, None)
-        elif update_type == "toolCallUpdate":
+        elif isinstance(update, ToolCallProgress):
             pass
-        elif update_type == "plan":
+        elif isinstance(update, AgentPlanUpdate):
             if config.bridge.show_intermediate:
-                entries = update.get("entries", [])
+                entries = update.entries or []
                 if entries:
-                    await _flush_agent_chunks(session_id, feishu, session_manager, agent_text_chunks, agent_thought_chunks)
-                    plan_text = _format_plan(entries)
+                    await _flush_agent_chunks(
+                        session_id,
+                        feishu,
+                        session_manager,
+                        agent_text_chunks,
+                        agent_thought_chunks,
+                    )
+                    plan_text = _format_plan(
+                        [e.model_dump(mode="json", by_alias=True, exclude_none=True) for e in entries]
+                    )
                     await _send_tool_msg(feishu, session_manager, session_id, plan_text)
         else:
             if config.bridge.show_intermediate:
-                await _flush_agent_chunks(session_id, feishu, session_manager, agent_text_chunks, agent_thought_chunks)
+                await _flush_agent_chunks(
+                    session_id,
+                    feishu,
+                    session_manager,
+                    agent_text_chunks,
+                    agent_thought_chunks,
+                )
 
-    async def on_permission(params: dict) -> Optional[str]:
+    async def on_permission(session_id: str, options: list[PermissionOption]) -> Optional[str]:
         """Handle permission requests from agents."""
-        session_id = params.get("sessionId", "")
-        options = params.get("options", [])
-
         info = session_manager.find_by_session_id(session_id)
 
         if info is None:
@@ -123,17 +160,15 @@ async def run_bridge(config: Config):
 
         if agent_manager.is_auto_approve(session_id):
             if options:
-                return options[0].get("optionId")
+                return options[0].option_id
             return None
 
         # Format and send permission request
-        options_text = "\n".join(
-            f"{i + 1}. {opt.get('name', '')}" for i, opt in enumerate(options)
-        )
+        options_text = "\n".join(f"{i + 1}. {opt.name}" for i, opt in enumerate(options))
         msg = f"⚠️ Permission Required\n\n{options_text}\n\nReply with the number to approve, or 'deny' to reject."
         await feishu.send_message(session.conversation_id, root_message_id, msg)
 
-        future = asyncio.get_running_loop().create_future()
+        future: asyncio.Future[Optional[str]] = asyncio.get_running_loop().create_future()
         pending_permissions[root_message_id] = {"options": options, "future": future}
         return await future
 
@@ -170,21 +205,45 @@ async def run_bridge(config: Config):
     try:
         while True:
             event = await event_queue.get()
-            logger.debug("Processing event: chat_id=%s, text=%s", event.conversation_id, event.text[:50])
-            asyncio.create_task(
-                handle_event(
-                    event, feishu, config, agent_manager, session_manager,
-                    pending_permissions, notification_flush_callback,
-                )
+            logger.debug(
+                "Processing event: chat_id=%s, text=%s",
+                event.conversation_id,
+                event.text[:50],
             )
+
+            async def _safe_handle(ev):
+                try:
+                    logger.debug(">>> Entering handle_event for %s", ev.root_id)
+                    await handle_event(
+                        ev,
+                        feishu,
+                        config,
+                        agent_manager,
+                        session_manager,
+                        pending_permissions,
+                        notification_flush_callback,
+                    )
+                    logger.debug("<<< handle_event completed for %s", ev.root_id)
+                except Exception:
+                    logger.exception("Unhandled error in handle_event")
+
+            asyncio.create_task(_safe_handle(event))
     except asyncio.CancelledError:
         ttl_task.cancel()
         logger.info("Bridge shutting down...")
+        os._exit(0)
+    except KeyboardInterrupt:
+        ttl_task.cancel()
+        logger.info("Bridge shutting down...")
+        os._exit(0)
 
 
 async def _flush_agent_chunks(
-    session_id: str, feishu: FeishuConnection, session_manager: SessionManager,
-    agent_text_chunks: dict[str, str], agent_thought_chunks: dict[str, str],
+    session_id: str,
+    feishu: FeishuConnection,
+    session_manager: SessionManager,
+    agent_text_chunks: dict[str, str],
+    agent_thought_chunks: dict[str, str],
 ) -> None:
     """Flush accumulated agent streaming chunks to Feishu as messages."""
     info = session_manager.find_by_session_id(session_id)
@@ -208,7 +267,10 @@ async def _flush_agent_chunks(
 
 
 async def _send_tool_msg(
-    feishu: FeishuConnection, session_manager: SessionManager, session_id: str, msg: str,
+    feishu: FeishuConnection,
+    session_manager: SessionManager,
+    session_id: str,
+    msg: str,
 ) -> None:
     """Send a tool/plan notification message to the session's conversation."""
     info = session_manager.find_by_session_id(session_id)

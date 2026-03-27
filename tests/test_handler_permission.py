@@ -2,6 +2,8 @@
 
 import pytest
 
+from acp.schema import PermissionOption
+
 from src.handler_permission import handle_permission_response
 
 
@@ -21,8 +23,8 @@ def feishu():
 @pytest.fixture
 def options():
     return [
-        {"optionId": "opt1", "name": "Allow read"},
-        {"optionId": "opt2", "name": "Allow write"},
+        PermissionOption(option_id="opt1", name="Allow read", kind="allow_once"),
+        PermissionOption(option_id="opt2", name="Allow write", kind="allow_once"),
     ]
 
 

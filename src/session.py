@@ -33,10 +33,14 @@ class SessionManager:
         self._sessions: collections.OrderedDict[str, SessionState] = collections.OrderedDict()
         self._config = config
 
-    def create_session(self, root_message_id: str, session_id: str,
-                       conversation_id: str, trigger_text: str,
-                       config_options: Optional[list] = None,
-                       ) -> tuple[SessionState, Optional[SessionState]]:
+    def create_session(
+        self,
+        root_message_id: str,
+        session_id: str,
+        conversation_id: str,
+        trigger_text: str,
+        config_options: Optional[list] = None,
+    ) -> tuple[SessionState, Optional[SessionState]]:
         """Create session, evict LRU if at capacity. Returns (new, evicted)."""
         evicted = None
         if len(self._sessions) >= self._config.bridge.max_sessions:
@@ -44,9 +48,12 @@ class SessionManager:
             if evicted is None:
                 raise RuntimeError("All sessions are busy, cannot evict")
         session = SessionState(
-            session_id=session_id, conversation_id=conversation_id,
-            trigger_message_id=root_message_id, summary=trigger_text[:20],
-            last_active=time.time(), config_options=config_options,
+            session_id=session_id,
+            conversation_id=conversation_id,
+            trigger_message_id=root_message_id,
+            summary=trigger_text[:20],
+            last_active=time.time(),
+            config_options=config_options,
         )
         self._sessions[root_message_id] = session
         return session, evicted

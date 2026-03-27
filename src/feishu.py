@@ -65,25 +65,33 @@ class FeishuEvent:
         sender_id: open_id of the message sender.
         chat_type: "p2p" for DM, "group" for group chat.
     """
+
     conversation_id: str
     message_id: str
     parent_id: Optional[str]
     text: str
+    clean_text: str = ""
     files: list[FeishuFile] = field(default_factory=list)
     root_id: str = ""
     is_mention_bot: bool = False
     sender_id: str = ""
     chat_type: str = ""
 
+    def __post_init__(self):
+        if not self.clean_text:
+            self.clean_text = self.text
+
 
 @dataclass
 class _ApiResult:
     """Unified result for both SDK and httpx API calls."""
+
     code: int = 0
     data: Optional[str] = None
 
     def success(self) -> bool:
         return self.code == 0
+
 
 EventCallback = Callable[[FeishuEvent], None]
 
@@ -92,19 +100,19 @@ T = TypeVar("T")
 _RATE_LIMIT_CODE = 99991400
 _RETRYABLE_CODES = {
     99991400,  # request trigger frequency limit
-    1500,      # internal error
-    5000,      # internal error, reduce frequency
-    10101,     # internal error
-    55001,     # server internal error
-    90217,     # too many requests
-    90235,     # server busy
-    1000004,   # method rate limited
-    1000005,   # app rate limited
-    190005,    # app rate limited
-    11232,     # create message trigger rate limit
-    11233,     # create message chat trigger rate limit
-    11247,     # internal send message trigger rate limit
-    18121,     # create request is being processed
+    1500,  # internal error
+    5000,  # internal error, reduce frequency
+    10101,  # internal error
+    55001,  # server internal error
+    90217,  # too many requests
+    90235,  # server busy
+    1000004,  # method rate limited
+    1000005,  # app rate limited
+    190005,  # app rate limited
+    11232,  # create message trigger rate limit
+    11233,  # create message chat trigger rate limit
+    11247,  # internal send message trigger rate limit
+    18121,  # create request is being processed
 }
 _MAX_RETRIES = 3
 _RETRY_BASE_DELAY = 1.0  # seconds
@@ -120,13 +128,25 @@ async def _retry_on_rate_limit(fn: Callable[[], Awaitable[T]], retries: int = _M
                 return result
             # Retryable error — retry
             if attempt < retries:
-                delay = _RETRY_BASE_DELAY * (2 ** attempt)
-                logger.warning("Retryable error %s (attempt %d/%d), retrying in %.1fs", code, attempt + 1, retries, delay)
+                delay = _RETRY_BASE_DELAY * (2**attempt)
+                logger.warning(
+                    "Retryable error %s (attempt %d/%d), retrying in %.1fs",
+                    code,
+                    attempt + 1,
+                    retries,
+                    delay,
+                )
                 await asyncio.sleep(delay)
         except Exception as e:
             if attempt < retries:
-                delay = _RETRY_BASE_DELAY * (2 ** attempt)
-                logger.warning("Network error (attempt %d/%d): %s, retrying in %.1fs", attempt + 1, retries, e, delay)
+                delay = _RETRY_BASE_DELAY * (2**attempt)
+                logger.warning(
+                    "Network error (attempt %d/%d): %s, retrying in %.1fs",
+                    attempt + 1,
+                    retries,
+                    e,
+                    delay,
+                )
                 await asyncio.sleep(delay)
             else:
                 raise
@@ -153,8 +173,7 @@ class FeishuConnection:
         result = await _retry_on_rate_limit(self._get_bot_open_id)
         if not result.success():
             raise RuntimeError(
-                f"Failed to fetch bot open_id (code={result.code}). "
-                "Check app_id/app_secret and network."
+                f"Failed to fetch bot open_id (code={result.code}). Check app_id/app_secret and network."
             )
 
     def connect(self, callback: EventCallback) -> None:
@@ -223,6 +242,23 @@ class FeishuConnection:
             except (json.JSONDecodeError, TypeError):
                 pass
 
+        # Strip bot @mention from text
+        if msg.mentions and self._bot_open_id:
+            for mention in msg.mentions:
+                if mention.id and mention.id.open_id == self._bot_open_id:
+                    key = getattr(mention, "key", None)
+                    if isinstance(key, str):
+                        text = text.replace(key, "").strip()
+
+        # Build clean_text with all @mention placeholders removed
+        clean_text = text
+        if msg.mentions:
+            for mention in msg.mentions:
+                key = getattr(mention, "key", None)
+                if isinstance(key, str):
+                    clean_text = clean_text.replace(key, "")
+            clean_text = clean_text.strip()
+
         # Determine if bot was @mentioned
         is_mention_bot = False
         if msg.mentions and self._bot_open_id:
@@ -242,6 +278,7 @@ class FeishuConnection:
             message_id=message_id,
             parent_id=parent_id,
             text=text,
+            clean_text=clean_text,
             root_id=root_id,
             is_mention_bot=is_mention_bot,
             sender_id=sender_id,
@@ -249,9 +286,7 @@ class FeishuConnection:
         )
         self._event_callback(event)
 
-    async def send_message(
-        self, conversation_id: str, reply_to: Optional[str], text: str
-    ) -> Optional[str]:
+    async def send_message(self, conversation_id: str, reply_to: Optional[str], text: str) -> Optional[str]:
         """Send a text message. Returns message_id of the sent message.
 
         Args:
@@ -263,26 +298,18 @@ class FeishuConnection:
         """
         if reply_to:
             # Reply to a specific message
-            body = ReplyMessageRequestBody.builder().msg_type("text").content(
-                json.dumps({"text": text})
-            ).build()
-            req = (
-                ReplyMessageRequest.builder()
-                .message_id(reply_to)
-                .request_body(body)
-                .build()
-            )
+            body = ReplyMessageRequestBody.builder().msg_type("text").content(json.dumps({"text": text})).build()
+            req = ReplyMessageRequest.builder().message_id(reply_to).request_body(body).build()
             resp = await _retry_on_rate_limit(lambda: self._client.im.v1.message.areply(req))  # type: ignore[union-attr]
         else:
-            body = CreateMessageRequestBody.builder().msg_type("text").receive_id(
-                conversation_id
-            ).content(json.dumps({"text": text})).build()
-            req = (
-                CreateMessageRequest.builder()
-                .receive_id_type("chat_id")
-                .request_body(body)
+            body = (
+                CreateMessageRequestBody.builder()
+                .msg_type("text")
+                .receive_id(conversation_id)
+                .content(json.dumps({"text": text}))
                 .build()
             )
+            req = CreateMessageRequest.builder().receive_id_type("chat_id").request_body(body).build()
             resp = await _retry_on_rate_limit(lambda: self._client.im.v1.message.acreate(req))  # type: ignore[union-attr]
 
         if not resp.success():
@@ -291,16 +318,9 @@ class FeishuConnection:
 
         return resp.data.message_id  # type: ignore[union-attr]
 
-
     async def download_file(self, message_id: str, file_key: str) -> Optional[bytes]:
         """Download a file from Feishu."""
-        req = (
-            GetMessageResourceRequest.builder()
-            .message_id(message_id)
-            .file_key(file_key)
-            .type("file")
-            .build()
-        )
+        req = GetMessageResourceRequest.builder().message_id(message_id).file_key(file_key).type("file").build()
         resp = await _retry_on_rate_limit(lambda: self._client.im.v1.message_resource.aget(req))  # type: ignore[union-attr]
         if not resp.success():
             logger.error("Failed to download file: %s %s", resp.code, resp.msg)
@@ -329,11 +349,7 @@ class FeishuConnection:
 
         # Upload file to get file_key
         file_body = (
-            CreateFileRequestBody.builder()
-            .file_type("stream")
-            .file_name(filename)
-            .file(io.BytesIO(content))
-            .build()
+            CreateFileRequestBody.builder().file_type("stream").file_name(filename).file(io.BytesIO(content)).build()
         )
         file_req = CreateFileRequest.builder().request_body(file_body).build()
         file_resp = await _retry_on_rate_limit(lambda: self._client.im.v1.file.acreate(file_req))  # type: ignore[union-attr]
@@ -346,26 +362,18 @@ class FeishuConnection:
         msg_content = json.dumps({"file_key": file_key})
         if reply_to:
             # Reply to a specific message
-            body = ReplyMessageRequestBody.builder().msg_type("file").content(
-                msg_content
-            ).build()
-            req = (
-                ReplyMessageRequest.builder()
-                .message_id(reply_to)
-                .request_body(body)
-                .build()
-            )
+            body = ReplyMessageRequestBody.builder().msg_type("file").content(msg_content).build()
+            req = ReplyMessageRequest.builder().message_id(reply_to).request_body(body).build()
             resp = await _retry_on_rate_limit(lambda: self._client.im.v1.message.areply(req))  # type: ignore[union-attr]
         else:
-            body = CreateMessageRequestBody.builder().msg_type("file").receive_id(
-                conversation_id
-            ).content(msg_content).build()
-            req = (
-                CreateMessageRequest.builder()
-                .receive_id_type("chat_id")
-                .request_body(body)
+            body = (
+                CreateMessageRequestBody.builder()
+                .msg_type("file")
+                .receive_id(conversation_id)
+                .content(msg_content)
                 .build()
             )
+            req = CreateMessageRequest.builder().receive_id_type("chat_id").request_body(body).build()
             resp = await _retry_on_rate_limit(lambda: self._client.im.v1.message.acreate(req))  # type: ignore[union-attr]
 
         if not resp.success():
@@ -380,12 +388,7 @@ class FeishuConnection:
             .reaction_type(Emoji.builder().emoji_type(emoji_type).build())
             .build()
         )
-        req = (
-            CreateMessageReactionRequest.builder()
-            .message_id(message_id)
-            .request_body(body)
-            .build()
-        )
+        req = CreateMessageReactionRequest.builder().message_id(message_id).request_body(body).build()
         resp = await _retry_on_rate_limit(lambda: self._client.im.v1.message_reaction.acreate(req))  # type: ignore[union-attr]
         if not resp.success():
             logger.error("Failed to add reaction: %s %s", resp.code, resp.msg)
@@ -394,12 +397,7 @@ class FeishuConnection:
 
     async def remove_reaction(self, message_id: str, reaction_id: str) -> bool:
         """Remove a reaction from a message."""
-        req = (
-            DeleteMessageReactionRequest.builder()
-            .message_id(message_id)
-            .reaction_id(reaction_id)
-            .build()
-        )
+        req = DeleteMessageReactionRequest.builder().message_id(message_id).reaction_id(reaction_id).build()
         resp = await _retry_on_rate_limit(lambda: self._client.im.v1.message_reaction.adelete(req))  # type: ignore[union-attr]
         if not resp.success():
             logger.error("Failed to remove reaction: %s %s", resp.code, resp.msg)

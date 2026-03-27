@@ -232,13 +232,14 @@ class TestHandleEvent:
     async def test_pending_permission_response_with_root_message_id(self):
         """Pending permission response handled correctly with root_message_id."""
         from src.handler import handle_event
+        from acp.schema import PermissionOption
 
         feishu = FakeFeishu()
         future = asyncio.get_event_loop().create_future()
         # Permission keyed by root_message_id (= root_id or message_id)
         pending = {
             "root1": {
-                "options": [{"optionId": "opt1", "name": "Allow"}],
+                "options": [PermissionOption(option_id="opt1", name="Allow", kind="allow_once")],
                 "future": future,
             }
         }
@@ -260,12 +261,13 @@ class TestHandleEvent:
     async def test_pending_permission_no_root_id_uses_message_id(self):
         """Permission keyed by message_id when root_id is absent."""
         from src.handler import handle_event
+        from acp.schema import PermissionOption
 
         feishu = FakeFeishu()
         future = asyncio.get_event_loop().create_future()
         pending = {
             "m1": {
-                "options": [{"optionId": "opt1", "name": "Allow"}],
+                "options": [PermissionOption(option_id="opt1", name="Allow", kind="allow_once")],
                 "future": future,
             }
         }

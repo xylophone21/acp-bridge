@@ -1,267 +1,203 @@
 """Agent manager for spawning and communicating with ACP agents via stdio."""
 
+from __future__ import annotations
+
 import asyncio
-import json
 import logging
-from dataclasses import dataclass
-from typing import Callable, Optional
+from contextlib import AsyncExitStack
+from typing import Any, Awaitable, Callable, Optional, Union
+
+import acp
+from acp.core import ClientSideConnection
+from acp.interfaces import Client
+from acp.schema import (
+    AgentMessageChunk,
+    AgentPlanUpdate,
+    AgentThoughtChunk,
+    AllowedOutcome,
+    AvailableCommandsUpdate,
+    ConfigOptionUpdate,
+    CurrentModeUpdate,
+    DeniedOutcome,
+    PermissionOption,
+    RequestPermissionResponse,
+    SessionInfoUpdate,
+    TextContentBlock,
+    ToolCallProgress,
+    ToolCallStart,
+    UsageUpdate,
+    UserMessageChunk,
+)
 
 from src.config import AgentConfig
 
 logger = logging.getLogger(__name__)
 
+# Type alias for the session_update union
+SessionUpdate = Union[
+    UserMessageChunk,
+    AgentMessageChunk,
+    AgentThoughtChunk,
+    ToolCallStart,
+    ToolCallProgress,
+    AgentPlanUpdate,
+    AvailableCommandsUpdate,
+    CurrentModeUpdate,
+    ConfigOptionUpdate,
+    SessionInfoUpdate,
+    UsageUpdate,
+]
 
-@dataclass
-class PermissionRequest:
-    session_id: str
-    options: list[dict]
-    future: asyncio.Future
+NotificationCallback = Callable[[str, SessionUpdate], Awaitable[None]]
+PermissionCallback = Callable[[str, list[PermissionOption]], Awaitable[Optional[str]]]
 
 
-class AgentHandle:
-    """Handle for communicating with a spawned agent process via JSON-RPC over stdio."""
+class _BridgeClient(Client):
+    """ACP Client that forwards agent events to bridge callbacks."""
 
-    def __init__(self, process: asyncio.subprocess.Process):
+    def __init__(
+        self,
+        notification_cb: NotificationCallback,
+        permission_cb: PermissionCallback,
+    ) -> None:
+        self._notification_cb = notification_cb
+        self._permission_cb = permission_cb
+
+    async def session_update(self, session_id: str, update: SessionUpdate, **kwargs: Any) -> None:
+        await self._notification_cb(session_id, update)
+
+    async def request_permission(
+        self,
+        options: list[PermissionOption],
+        session_id: str,
+        tool_call: Any,
+        **kwargs: Any,
+    ) -> RequestPermissionResponse:
+        option_id = await self._permission_cb(session_id, options)
+        if option_id is None:
+            return RequestPermissionResponse(outcome=DeniedOutcome(outcome="cancelled"))
+        return RequestPermissionResponse(outcome=AllowedOutcome(option_id=option_id, outcome="selected"))
+
+    async def ext_notification(self, method: str, params: dict[str, Any]) -> None:
+        logger.debug("Agent ext notification: %s", method)
+
+    async def ext_method(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
+        logger.debug("Agent ext method: %s", method)
+        return {}
+
+
+class _AgentEntry:
+    """Holds a live agent connection and its exit stack."""
+
+    def __init__(
+        self,
+        conn: ClientSideConnection,
+        stack: AsyncExitStack,
+        process: asyncio.subprocess.Process,
+    ) -> None:
+        self.conn = conn
+        self.stack = stack
         self.process = process
-        self._request_id = 0                                    # Auto-incrementing JSON-RPC request ID
-        self._pending: dict[int, asyncio.Future] = {}           # request_id → Future, resolved by _read_loop
-        self._notification_callback: Optional[Callable] = None  # Called on agent notifications (e.g. streaming chunks)
-        self._permission_callback: Optional[Callable] = None    # Called on agent permission requests
-        self._read_task: Optional[asyncio.Task] = None          # Background task running _read_loop
-        self._lock = asyncio.Lock()                             # Guards _request_id increment
-        self._closed = False                                    # Set when _read_loop exits
 
-    def start(self, notification_callback, permission_callback):
-        self._notification_callback = notification_callback
-        self._permission_callback = permission_callback
-        self._read_task = asyncio.create_task(self._read_loop())
-
-    async def _read_loop(self):
-        """Read JSON-RPC messages from agent stdout."""
+    async def close(self) -> None:
         try:
-            while True:
-                line = await self.process.stdout.readline()  # type: ignore[union-attr]
-                if not line:
-                    break
-                line = line.decode().strip()
-                if not line:
-                    continue
-                try:
-                    msg = json.loads(line)
-                except json.JSONDecodeError:
-                    logger.warning("Invalid JSON from agent: %s", line[:200])
-                    continue
-
-                if "id" in msg and "method" not in msg:
-                    # Response to a request
-                    req_id = msg["id"]
-                    if req_id in self._pending:
-                        self._pending.pop(req_id).set_result(msg)
-                elif "method" in msg:
-                    await self._handle_server_message(msg)
-        except asyncio.CancelledError:
+            await self.stack.aclose()
+        except Exception:
             pass
-        except Exception as e:
-            logger.error("Agent read loop error: %s", e)
-        finally:
-            self._reject_all_pending()
-
-    def _reject_all_pending(self):
-        """Reject all pending futures with ConnectionError."""
-        self._closed = True
-        for future in self._pending.values():
-            if not future.done():
-                future.set_exception(ConnectionError("Agent process exited"))
-        self._pending.clear()
-
-    async def _handle_server_message(self, msg: dict):
-        method = msg.get("method", "")
-        params = msg.get("params", {})
-        msg_id = msg.get("id")
-
-        if method == "notifications/session":
-            if self._notification_callback:
-                await self._notification_callback(params)
-        elif method == "requestPermission":
-            if self._permission_callback and msg_id is not None:
-                result = await self._permission_callback(params)
-                await self._send_response(msg_id, result)
-        else:
-            logger.debug("Unhandled agent method: %s", method)
-
-    async def _send_response(self, msg_id, result):
-        response = {"jsonrpc": "2.0", "id": msg_id, "result": result}
-        await self._write(response)
-
-    async def _send_request(self, method: str, params: dict) -> dict:
-        if self._closed:
-            raise ConnectionError("Agent process already exited")
-
-        async with self._lock:
-            self._request_id += 1
-            req_id = self._request_id
-
-        future = asyncio.get_running_loop().create_future()
-        self._pending[req_id] = future
-
-        msg = {"jsonrpc": "2.0", "id": req_id, "method": method, "params": params}
-        await self._write(msg)
-
-        return await future
-
-    async def _write(self, msg: dict):
-        data = json.dumps(msg) + "\n"
-        self.process.stdin.write(data.encode())  # type: ignore[union-attr]
-        await self.process.stdin.drain()  # type: ignore[union-attr]
-
-    async def initialize(self) -> dict:
-        return await self._send_request("initialize", {
-            "protocolVersion": "2025-03-26",
-            "clientInfo": {"name": "agent-bridge", "version": "0.1.0"},
-        })
-
-    async def new_session(self, workspace: str) -> dict:
-        return await self._send_request("sessions/new", {
-            "workspace": workspace,
-        })
-
-    async def prompt(self, session_id: str, content: list[dict]) -> dict:
-        return await self._send_request("sessions/prompt", {
-            "sessionId": session_id,
-            "content": content,
-        })
-
-    async def cancel(self, session_id: str):
-        msg = {
-            "jsonrpc": "2.0",
-            "method": "notifications/cancel",
-            "params": {"sessionId": session_id},
-        }
-        await self._write(msg)
-
-    async def set_config_option(self, session_id: str, option_id: str, value: str) -> dict:
-        return await self._send_request("sessions/setConfigOption", {
-            "sessionId": session_id,
-            "optionId": option_id,
-            "value": value,
-        })
-
-    async def set_mode(self, session_id: str, mode_id: str) -> dict:
-        return await self._send_request("sessions/setMode", {
-            "sessionId": session_id,
-            "modeId": mode_id,
-        })
-
-    async def set_model(self, session_id: str, model_id: str) -> dict:
-        return await self._send_request("sessions/setModel", {
-            "sessionId": session_id,
-            "modelId": model_id,
-        })
-
-    async def kill(self):
-        if self._read_task:
-            self._read_task.cancel()
         try:
             self.process.kill()
             await self.process.wait()
-        except ProcessLookupError:
+        except (ProcessLookupError, OSError):
             pass
 
 
 class AgentManager:
     """Manages spawned agent processes and ACP communication."""
 
-    def __init__(self, notification_callback, permission_callback):
-        self._agents: dict[str, AgentHandle] = {}
+    def __init__(
+        self,
+        notification_cb: NotificationCallback,
+        permission_cb: PermissionCallback,
+    ) -> None:
+        self._agents: dict[str, _AgentEntry] = {}
         self._agent_configs: dict[str, AgentConfig] = {}
         self._auto_approve: dict[str, bool] = {}
-        self._notification_callback = notification_callback
-        self._permission_callback = permission_callback
+        self._notification_cb = notification_cb
+        self._permission_cb = permission_cb
 
-    def register_agents(self, configs: list):
+    def register_agents(self, configs: list[AgentConfig]) -> None:
         for config in configs:
             self._agent_configs[config.name] = config
 
-    async def new_session(
-        self, agent_name: str, workspace: str, auto_approve: bool
-    ) -> dict:
+    async def new_session(self, agent_name: str, workspace: str, auto_approve: bool) -> dict[str, Any]:
         config = self._agent_configs.get(agent_name)
         if config is None:
             raise ValueError(f"Agent config not found: {agent_name}")
 
-        cmd = [config.command] + config.args
+        client = _BridgeClient(self._notification_cb, self._permission_cb)
         env = dict(**config.env) if config.env else None
 
-        process = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=None,  # inherit
-            env=env,
-        )
+        stack = AsyncExitStack()
+        try:
+            conn, process = await stack.enter_async_context(
+                acp.spawn_agent_process(client, config.command, *config.args, env=env)
+            )
+            logger.debug("Agent process spawned (pid=%s)", process.pid)
 
-        handle = AgentHandle(process)
-        handle.start(self._notification_callback, self._permission_callback)
+            init_resp = await conn.initialize(
+                protocol_version=acp.PROTOCOL_VERSION,
+                client_info=acp.schema.Implementation(name="agent-bridge", version="0.1.0"),
+            )
+            logger.debug("Agent initialized: %s", init_resp.agent_info)
 
-        # Initialize
-        init_resp = await handle.initialize()
-        if "error" in init_resp:
-            await handle.kill()
-            raise RuntimeError(f"Agent init failed: {init_resp['error']}")
+            session_resp = await conn.new_session(cwd=workspace)
+            logger.debug("Session created: %s", session_resp.session_id)
+        except BaseException:
+            await stack.aclose()
+            raise
 
-        # Create session
-        session_resp = await handle.new_session(workspace)
-        if "error" in session_resp:
-            await handle.kill()
-            raise RuntimeError(f"Session creation failed: {session_resp['error']}")
-
-        result = session_resp.get("result", {})
-        session_id = result.get("sessionId", "")
-
-        self._agents[session_id] = handle
+        session_id = session_resp.session_id
+        self._agents[session_id] = _AgentEntry(conn, stack, process)
         self._auto_approve[session_id] = auto_approve
 
-        return result
+        return session_resp.model_dump(mode="json", by_alias=True, exclude_none=True)
 
-    async def prompt(self, session_id: str, content: list[dict]) -> dict:
-        handle = self._agents.get(session_id)
-        if handle is None:
+    def _get_entry(self, session_id: str) -> _AgentEntry:
+        entry = self._agents.get(session_id)
+        if entry is None:
             raise ValueError(f"Session not found: {session_id}")
-        resp = await handle.prompt(session_id, content)
-        return resp.get("result", {})
+        return entry
 
-    async def cancel(self, session_id: str):
-        handle = self._agents.get(session_id)
-        if handle is None:
-            raise ValueError(f"Session not found: {session_id}")
-        await handle.cancel(session_id)
+    async def prompt(self, session_id: str, content: list[dict[str, Any]]) -> dict[str, Any]:
+        entry = self._get_entry(session_id)
+        prompt_content = [TextContentBlock(**c) for c in content]
+        resp = await entry.conn.prompt(prompt=prompt_content, session_id=session_id)
+        return resp.model_dump(mode="json", by_alias=True, exclude_none=True)
 
-    async def set_config_option(self, session_id: str, option_id: str, value: str) -> dict:
-        handle = self._agents.get(session_id)
-        if handle is None:
-            raise ValueError(f"Session not found: {session_id}")
-        resp = await handle.set_config_option(session_id, option_id, value)
-        return resp.get("result", {})
+    async def cancel(self, session_id: str) -> None:
+        entry = self._get_entry(session_id)
+        await entry.conn.cancel(session_id=session_id)
 
-    async def set_mode(self, session_id: str, mode_id: str) -> dict:
-        handle = self._agents.get(session_id)
-        if handle is None:
-            raise ValueError(f"Session not found: {session_id}")
-        resp = await handle.set_mode(session_id, mode_id)
-        return resp.get("result", {})
+    async def set_config_option(self, session_id: str, option_id: str, value: str) -> dict[str, Any]:
+        entry = self._get_entry(session_id)
+        resp = await entry.conn.set_config_option(config_id=option_id, session_id=session_id, value=value)
+        return resp.model_dump(mode="json", by_alias=True, exclude_none=True)
 
-    async def set_model(self, session_id: str, model_id: str) -> dict:
-        handle = self._agents.get(session_id)
-        if handle is None:
-            raise ValueError(f"Session not found: {session_id}")
-        resp = await handle.set_model(session_id, model_id)
-        return resp.get("result", {})
+    async def set_mode(self, session_id: str, mode_id: str) -> dict[str, Any]:
+        entry = self._get_entry(session_id)
+        resp = await entry.conn.set_session_mode(mode_id=mode_id, session_id=session_id)
+        return resp.model_dump(mode="json", by_alias=True, exclude_none=True)
 
-    async def end_session(self, session_id: str):
-        handle = self._agents.pop(session_id, None)
+    async def set_model(self, session_id: str, model_id: str) -> dict[str, Any]:
+        entry = self._get_entry(session_id)
+        resp = await entry.conn.set_session_model(model_id=model_id, session_id=session_id)
+        return resp.model_dump(mode="json", by_alias=True, exclude_none=True)
+
+    async def end_session(self, session_id: str) -> None:
+        entry = self._agents.pop(session_id, None)
         self._auto_approve.pop(session_id, None)
-        if handle:
-            await handle.kill()
+        if entry:
+            await entry.close()
 
     def is_auto_approve(self, session_id: str) -> bool:
         return self._auto_approve.get(session_id, False)

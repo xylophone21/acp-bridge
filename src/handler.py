@@ -37,7 +37,7 @@ async def handle_event(
 
     # Look up existing session by root_message_id
     session = session_manager.get_session_by_root(root_message_id)
-    is_command = text.strip().startswith("#")
+    is_command = event.clean_text.startswith("#")
 
     if session is not None:
         # --- Session exists ---
@@ -45,7 +45,11 @@ async def handle_event(
             await handle_command(event, feishu, config, agent_manager, session_manager)
         else:
             await handle_message(
-                event, feishu, config, agent_manager, session_manager,
+                event,
+                feishu,
+                config,
+                agent_manager,
+                session_manager,
                 notification_flush_callback,
             )
     else:
@@ -60,6 +64,10 @@ async def handle_event(
             await handle_command(event, feishu, config, agent_manager, session_manager)
         else:
             await handle_message(
-                event, feishu, config, agent_manager, session_manager,
+                event,
+                feishu,
+                config,
+                agent_manager,
+                session_manager,
                 notification_flush_callback,
             )

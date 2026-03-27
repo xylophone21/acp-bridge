@@ -47,11 +47,10 @@ async def handle_command(
     agent_manager: AgentManager,
     session_manager: SessionManager,
 ):
-    text = event.text
     conversation_id = event.conversation_id
     root_message_id = event.root_id
     reply_id = event.message_id
-    parts = text.strip().split()
+    parts = event.clean_text.split()
     command = parts[0]
 
     if command == "#session":
@@ -83,7 +82,8 @@ async def handle_command(
                 last_active = _format_relative_time(s.last_active) if s.last_active else "unknown"
                 lines.append(f"• {summary} | {status} | {last_active}")
             await feishu.send_message(
-                conversation_id, reply_id,
+                conversation_id,
+                reply_id,
                 f"Active sessions ({len(lines)}):\n" + "\n".join(lines),
             )
 
@@ -141,7 +141,11 @@ async def handle_command(
                         items.append(e)
                 listing = "\n".join(items)
                 ticks = safe_backticks(listing)
-                await feishu.send_message(conversation_id, reply_id, f"{file_path}:\n{ticks}\n{listing}\n{ticks}")
+                await feishu.send_message(
+                    conversation_id,
+                    reply_id,
+                    f"{file_path}:\n{ticks}\n{listing}\n{ticks}",
+                )
             except OSError as e:
                 await feishu.send_message(conversation_id, reply_id, f"Error reading directory: {e}")
         else:
@@ -149,7 +153,11 @@ async def handle_command(
                 with open(full_path, "r") as f:
                     content = f.read()
                 ticks = safe_backticks(content)
-                await feishu.send_message(conversation_id, reply_id, f"📄 {file_path}:\n{ticks}\n{content}\n{ticks}")
+                await feishu.send_message(
+                    conversation_id,
+                    reply_id,
+                    f"📄 {file_path}:\n{ticks}\n{content}\n{ticks}",
+                )
             except UnicodeDecodeError:
                 with open(full_path, "rb") as f:
                     data = f.read()
@@ -168,7 +176,10 @@ async def handle_command(
         try:
             result = subprocess.run(
                 ["git", "diff"] + extra_args,
-                cwd=ws, capture_output=True, text=True, timeout=30,
+                cwd=ws,
+                capture_output=True,
+                text=True,
+                timeout=30,
             )
             diff = result.stdout.strip()
             if not diff:
@@ -176,7 +187,11 @@ async def handle_command(
             else:
                 ticks = safe_backticks(diff)
                 label = " ".join(extra_args) if extra_args else "(whole repo)"
-                await feishu.send_message(conversation_id, reply_id, f"📝 Diff: {label}\n{ticks}\n{diff}\n{ticks}")
+                await feishu.send_message(
+                    conversation_id,
+                    reply_id,
+                    f"📝 Diff: {label}\n{ticks}\n{diff}\n{ticks}",
+                )
         except Exception as e:
             await feishu.send_message(conversation_id, reply_id, f"Error running git diff: {e}")
 
@@ -191,7 +206,15 @@ async def handle_command(
             await feishu.send_message(conversation_id, reply_id, msg)
         else:
             mode_value = parts[1].strip("`").rstrip("!")
-            await _switch_config_option(session, "mode", mode_value, agent_manager, feishu, conversation_id, reply_id)
+            await _switch_config_option(
+                session,
+                "mode",
+                mode_value,
+                agent_manager,
+                feishu,
+                conversation_id,
+                reply_id,
+            )
 
     elif command == "#model":
         session = session_manager.get_session_by_root(root_message_id)
@@ -204,7 +227,15 @@ async def handle_command(
             await feishu.send_message(conversation_id, reply_id, msg)
         else:
             model_value = parts[1].strip("`").rstrip("!")
-            await _switch_config_option(session, "model", model_value, agent_manager, feishu, conversation_id, reply_id)
+            await _switch_config_option(
+                session,
+                "model",
+                model_value,
+                agent_manager,
+                feishu,
+                conversation_id,
+                reply_id,
+            )
 
     else:  # #help or unknown
         await feishu.send_message(conversation_id, reply_id, HELP_MESSAGE)

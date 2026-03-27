@@ -3,6 +3,8 @@
 import logging
 from typing import Optional
 
+from acp.schema import PermissionOption
+
 from src.feishu import FeishuConnection
 
 logger = logging.getLogger(__name__)
@@ -10,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 async def handle_permission_response(
     text: str,
-    options: list[dict],
+    options: list[PermissionOption],
     feishu: FeishuConnection,
     conversation_id: str,
     thread_key: str,
@@ -26,9 +28,8 @@ async def handle_permission_response(
         choice = int(text)
         if 1 <= choice <= len(options):
             selected = options[choice - 1]
-            name = selected.get("name", "")
-            await feishu.send_message(conversation_id, thread_key, f"✅ Approved: {name}")
-            return selected.get("optionId")
+            await feishu.send_message(conversation_id, thread_key, f"✅ Approved: {selected.name}")
+            return selected.option_id
     except ValueError:
         pass
 

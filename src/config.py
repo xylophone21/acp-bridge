@@ -20,8 +20,8 @@ class BridgeConfig:
     allowed_users: list[str] = field(default_factory=list)
     max_sessions: int = 10
     session_ttl_minutes: int = 60
-    show_thinking: bool = False       # Send agent thinking/reasoning to user
-    show_intermediate: bool = False   # Send intermediate output (before tool calls)
+    show_thinking: bool = False  # Send agent thinking/reasoning to user
+    show_intermediate: bool = False  # Send intermediate output (before tool calls)
 
 
 @dataclass
