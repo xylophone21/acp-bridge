@@ -1,9 +1,10 @@
 """Tests for src/feishu.py — unit tests for non-network logic."""
 
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
-from unittest.mock import AsyncMock, MagicMock
 
 from src.feishu import FeishuConnection, FeishuEvent, FeishuFile
 

@@ -199,7 +199,7 @@ class FeishuConnection:
             self._app_id,
             self._app_secret,
             event_handler=event_handler,
-            log_level=lark.LogLevel.DEBUG,
+            log_level=lark.LogLevel.INFO,
         )
         ws_client.start()
 

@@ -30,9 +30,12 @@ def main():
             level=getattr(logging, args.log_level.upper(), logging.INFO),
             format="[%(asctime)s] [%(levelname)s] [%(name)s]: %(message)s",
         )
-        lark_logger = logging.getLogger("Lark")
-        lark_logger.handlers.clear()
-        lark_logger.setLevel(logging.getLogger().level)
+        # Silence noisy third-party loggers
+        for name in ("httpx", "httpcore", "urllib3", "Lark", "websockets"):
+            logger = logging.getLogger(name)
+            logger.setLevel(logging.WARNING)
+            logger.handlers.clear()
+
         config = Config.load(args.config)
         asyncio.run(run_bridge(config))
     else:

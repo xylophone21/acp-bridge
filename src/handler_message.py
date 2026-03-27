@@ -39,12 +39,14 @@ async def handle_message(
 
     session = session_manager.get_session_by_root(root_message_id)
     created = False
+    early_reaction_id = None
 
     if session is None:
         # Show typing indicator early, before session creation
         try:
             early_reaction_id = await feishu.add_reaction(reply_id, "Typing")
         except Exception:
+            logger.debug("Failed to add early typing indicator")
             early_reaction_id = None
 
         session, created = await _ensure_session(
@@ -62,12 +64,13 @@ async def handle_message(
                 try:
                     await feishu.remove_reaction(reply_id, early_reaction_id)
                 except Exception:
-                    pass
+                    logger.debug("Failed to remove early typing indicator")
             return
 
     # --- Session exists and is busy: silent buffer ---
     if not created and session.busy:
         session_manager.buffer_message(root_message_id, sender_id, text)
+        logger.debug("Buffered message for busy session %s", root_message_id)
         return
 
     # --- Session exists and not busy: touch + send prompt ---
@@ -121,13 +124,13 @@ async def _ensure_session(
                 agent_manager.new_session(agent_cfg.name, workspace, agent_cfg.auto_approve),
                 timeout=30,
             )
-            logger.debug("new_session returned for %s: %s", root_message_id, list(result.keys()))
+            logger.debug("Session ready for %s (session_id=%s)", root_message_id, result.get("sessionId", ""))
         except asyncio.TimeoutError:
-            logger.error("new_session timed out for %s", root_message_id)
+            logger.warning("new_session timed out for %s", root_message_id)
             await feishu.send_message(conversation_id, reply_id, "Error: agent session creation timed out")
             return None, False
         except Exception as e:
-            logger.error("Failed to start agent: %s", e)
+            logger.warning("Failed to start agent: %s", e)
             await feishu.send_message(conversation_id, reply_id, f"Error: {e}")
             return None, False
 
@@ -141,6 +144,7 @@ async def _ensure_session(
             )
             session_manager.set_busy(root_message_id, True)
         except RuntimeError as e:
+            logger.warning("Session creation failed for %s: %s", root_message_id, e)
             await agent_manager.end_session(result.get("sessionId", ""))
             await feishu.send_message(conversation_id, reply_id, str(e))
             return None, False
@@ -149,16 +153,20 @@ async def _ensure_session(
             try:
                 await agent_manager.end_session(evicted.session_id)
             except Exception as e:
-                logger.error("Failed to end evicted session %s: %s", evicted.session_id, e)
+                logger.warning("Failed to end evicted session %s: %s", evicted.session_id, e)
             try:
                 await feishu.add_reaction(evicted.trigger_message_id, "DONE")
                 if evicted.last_bot_message_id:
                     await feishu.add_reaction(evicted.last_bot_message_id, "DONE")
             except Exception as e:
-                logger.error("Failed to add reaction on evicted session: %s", e)
+                logger.warning("Failed to add reaction on evicted session: %s", e)
 
         await _apply_defaults(config.agent, session, agent_manager)
         return session, True
+
+    # Clean up lock after release — only if no one else is waiting
+    if not lock.locked():
+        _init_locks.pop(root_message_id, None)
 
 
 def _start_prompt(
@@ -188,11 +196,11 @@ def _start_prompt(
         content = [{"type": "text", "text": text}]
         try:
             result = await agent_manager.prompt(session.session_id, content)
-            logger.info("Prompt completed: stop_reason=%s", result.get("stopReason"))
+            logger.debug("Prompt completed: stop_reason=%s", result.get("stopReason"))
             if notification_flush_callback:
                 await notification_flush_callback(session.session_id)
         except Exception as e:
-            logger.error("Failed to send prompt: %s", e)
+            logger.warning("Failed to send prompt: %s", e)
             await feishu.send_message(conversation_id, reply_id, f"Error: {e}")
         finally:
             # Remove typing indicator (best-effort)
@@ -205,7 +213,7 @@ def _start_prompt(
             try:
                 session_manager.set_busy(root_message_id, False)
             except ValueError:
-                pass
+                logger.debug("Session already removed when clearing busy flag")
 
             # Flush buffered messages and send as new prompt if any
             try:
@@ -225,7 +233,7 @@ def _start_prompt(
                         )
                     )
             except Exception as e:
-                logger.error("Failed to flush buffer: %s", e)
+                logger.warning("Failed to flush buffer: %s", e)
 
     asyncio.create_task(_do_prompt())
 
@@ -244,19 +252,19 @@ async def _apply_defaults(agent_cfg, session, agent_manager) -> None:
                 for opt in session.config_options:
                     if opt.get("category") == category:
                         await agent_manager.set_config_option(session.session_id, opt["id"], value)
-                        logger.info("Set default %s=%s via config_options", category, value)
+                        logger.debug("Set default %s=%s via config_options", category, value)
                         break
                 else:
                     if category == "mode":
                         await agent_manager.set_mode(session.session_id, value)
                     else:
                         await agent_manager.set_model(session.session_id, value)
-                    logger.info("Set default %s=%s via legacy API", category, value)
+                    logger.debug("Set default %s=%s via legacy API", category, value)
             else:
                 if category == "mode":
                     await agent_manager.set_mode(session.session_id, value)
                 else:
                     await agent_manager.set_model(session.session_id, value)
-                logger.info("Set default %s=%s via legacy API", category, value)
+                logger.debug("Set default %s=%s via legacy API", category, value)
         except Exception as e:
             logger.warning("Failed to set default %s=%s: %s", category, value, e)

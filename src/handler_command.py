@@ -268,7 +268,7 @@ async def _switch_config_option(session, category, value, agent_manager, feishu,
                     await feishu.send_message(channel, reply_id, f"{category.title()} switched to: `{value}`")
                     return
                 except Exception as e:
-                    logger.debug("Failed to set %s via config_options: %s", category, e)
+                    logger.warning("Failed to set %s via config_options: %s", category, e)
 
     # Fallback to deprecated API
     try:

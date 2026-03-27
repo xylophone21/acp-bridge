@@ -35,12 +35,12 @@ async def _handle_evicted_sessions(
         try:
             await agent_manager.end_session(session.session_id)
         except Exception as e:
-            logger.error("Failed to end session %s: %s", session.session_id, e)
+            logger.warning("Failed to end session %s: %s", session.session_id, e)
 
         try:
             await feishu.add_reaction(session.trigger_message_id, "DONE")
         except Exception as e:
-            logger.error(
+            logger.warning(
                 "Failed to add reaction on trigger message %s: %s",
                 session.trigger_message_id,
                 e,
@@ -50,13 +50,13 @@ async def _handle_evicted_sessions(
             try:
                 await feishu.add_reaction(session.last_bot_message_id, "DONE")
             except Exception as e:
-                logger.error(
+                logger.warning(
                     "Failed to add reaction on bot message %s: %s",
                     session.last_bot_message_id,
                     e,
                 )
 
-        logger.info("TTL evicted session %s (summary: %s)", session.session_id, session.summary)
+        logger.debug("TTL evicted session %s (summary: %s)", session.session_id, session.summary)
 
 
 async def _ttl_eviction_loop(
@@ -71,7 +71,7 @@ async def _ttl_eviction_loop(
             expired = session_manager.evict_ttl_expired()
             await _handle_evicted_sessions(expired, agent_manager, feishu)
         except Exception as e:
-            logger.error("TTL eviction loop error: %s", e)
+            logger.warning("TTL eviction loop error: %s", e)
 
 
 async def run_bridge(config: Config):
@@ -153,7 +153,7 @@ async def run_bridge(config: Config):
         info = session_manager.find_by_session_id(session_id)
 
         if info is None:
-            logger.error("Session not found for permission: %s", session_id)
+            logger.warning("Session not found for permission: %s", session_id)
             return None
 
         root_message_id, session = info
@@ -190,8 +190,8 @@ async def run_bridge(config: Config):
     feishu_task = loop.run_in_executor(None, feishu.connect, on_feishu_event)
 
     # Wait for connection — connect() blocks forever on success,
-    # so if it returns within 5s, something went wrong.
-    done, _ = await asyncio.wait({feishu_task}, timeout=5)
+    # so if it returns within 1s, something went wrong.
+    done, _ = await asyncio.wait({feishu_task}, timeout=1)
     if done:
         feishu_task.result()  # raises the exception if any
         raise RuntimeError("Feishu connect() returned unexpectedly")
@@ -205,15 +205,15 @@ async def run_bridge(config: Config):
     try:
         while True:
             event = await event_queue.get()
-            logger.debug(
-                "Processing event: chat_id=%s, text=%s",
-                event.conversation_id,
-                event.text[:50],
+            logger.info(
+                "[%s] Received: %s (root=%s)",
+                event.message_id,
+                event.clean_text[:50] or "(empty)",
+                event.root_id,
             )
 
             async def _safe_handle(ev):
                 try:
-                    logger.debug(">>> Entering handle_event for %s", ev.root_id)
                     await handle_event(
                         ev,
                         feishu,
@@ -223,7 +223,7 @@ async def run_bridge(config: Config):
                         pending_permissions,
                         notification_flush_callback,
                     )
-                    logger.debug("<<< handle_event completed for %s", ev.root_id)
+                    logger.debug("Event handled for root_id=%s", ev.root_id)
                 except Exception:
                     logger.exception("Unhandled error in handle_event")
 
