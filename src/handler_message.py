@@ -201,6 +201,16 @@ def _start_prompt(
                 await notification_flush_callback(session.session_id)
         except Exception as e:
             logger.warning("Failed to send prompt: %s", e)
+            if not agent_manager.has_session(session.session_id):
+                try:
+                    session_manager.end_session(root_message_id)
+                    logger.warning("Removed dead session %s", root_message_id)
+                except ValueError:
+                    pass
+                try:
+                    await feishu.add_reaction(session.trigger_message_id, "DONE")
+                except Exception:
+                    pass
             await feishu.send_message(conversation_id, reply_id, f"Error: {e}")
         finally:
             # Remove typing indicator (best-effort)

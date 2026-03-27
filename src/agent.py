@@ -206,26 +206,57 @@ class AgentManager:
     async def prompt(self, session_id: str, content: list[dict[str, Any]]) -> dict[str, Any]:
         entry = self._get_entry(session_id)
         prompt_content: list[Any] = [TextContentBlock(**c) for c in content]
-        resp = await entry.conn.prompt(prompt=prompt_content, session_id=session_id)
+        try:
+            resp = await entry.conn.prompt(prompt=prompt_content, session_id=session_id)
+        except Exception:
+            if entry.process.returncode is not None:
+                logger.warning("Agent process died (pid=%s, rc=%s), cleaning up session %s",
+                               entry.process.pid, entry.process.returncode, session_id)
+                await self.end_session(session_id)
+            raise
         return resp.model_dump(mode="json", by_alias=True, exclude_none=True)
 
     async def cancel(self, session_id: str) -> None:
         entry = self._get_entry(session_id)
-        await entry.conn.cancel(session_id=session_id)
+        try:
+            await entry.conn.cancel(session_id=session_id)
+        except Exception:
+            if entry.process.returncode is not None:
+                logger.warning("Agent process died during cancel, cleaning up session %s", session_id)
+                await self.end_session(session_id)
+            raise
 
     async def set_config_option(self, session_id: str, option_id: str, value: str) -> dict[str, Any]:
         entry = self._get_entry(session_id)
-        resp = await entry.conn.set_config_option(config_id=option_id, session_id=session_id, value=value)
+        try:
+            resp = await entry.conn.set_config_option(config_id=option_id, session_id=session_id, value=value)
+        except Exception:
+            if entry.process.returncode is not None:
+                logger.warning("Agent process died during set_config_option, cleaning up session %s", session_id)
+                await self.end_session(session_id)
+            raise
         return resp.model_dump(mode="json", by_alias=True, exclude_none=True)
 
     async def set_mode(self, session_id: str, mode_id: str) -> dict[str, Any]:
         entry = self._get_entry(session_id)
-        resp = await entry.conn.set_session_mode(mode_id=mode_id, session_id=session_id)
+        try:
+            resp = await entry.conn.set_session_mode(mode_id=mode_id, session_id=session_id)
+        except Exception:
+            if entry.process.returncode is not None:
+                logger.warning("Agent process died during set_mode, cleaning up session %s", session_id)
+                await self.end_session(session_id)
+            raise
         return resp.model_dump(mode="json", by_alias=True, exclude_none=True)
 
     async def set_model(self, session_id: str, model_id: str) -> dict[str, Any]:
         entry = self._get_entry(session_id)
-        resp = await entry.conn.set_session_model(model_id=model_id, session_id=session_id)
+        try:
+            resp = await entry.conn.set_session_model(model_id=model_id, session_id=session_id)
+        except Exception:
+            if entry.process.returncode is not None:
+                logger.warning("Agent process died during set_model, cleaning up session %s", session_id)
+                await self.end_session(session_id)
+            raise
         return resp.model_dump(mode="json", by_alias=True, exclude_none=True)
 
     async def end_session(self, session_id: str) -> None:
@@ -236,3 +267,10 @@ class AgentManager:
 
     def is_auto_approve(self, session_id: str) -> bool:
         return self._auto_approve.get(session_id, False)
+
+    def has_session(self, session_id: str) -> bool:
+        return session_id in self._agents
+
+    def orphan_session_ids(self, known_session_ids: set[str]) -> list[str]:
+        """Return agent session IDs that have no matching session in session_manager."""
+        return [sid for sid in self._agents if sid not in known_session_ids]

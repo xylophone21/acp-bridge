@@ -78,13 +78,23 @@ async def handle_command(
             lines = []
             for s in sessions:
                 status = "busy" if s.busy else "idle"
+                if not agent_manager.has_session(s.session_id):
+                    status = "⚠️ zombie(no agent)"
                 summary = s.summary or "(no summary)"
                 last_active = _format_relative_time(s.last_active) if s.last_active else "unknown"
                 lines.append(f"• {summary} | {status} | {last_active}")
+
+            # Check for orphan agents (agent exists but no session)
+            orphans = agent_manager.orphan_session_ids(
+                {s.session_id for s in sessions}
+            )
+            for sid in orphans:
+                lines.append(f"• ⚠️ orphan(no session) | {sid}")
+
             await feishu.send_message(
                 conversation_id,
                 reply_id,
-                f"Active sessions ({len(lines)}):\n" + "\n".join(lines),
+                f"Active sessions ({len(sessions)}):\n" + "\n".join(lines),
             )
 
     elif command == "#end":

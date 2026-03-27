@@ -55,6 +55,12 @@ class FakeAgentManager:
     def is_auto_approve(self, session_id):
         return False
 
+    def has_session(self, session_id):
+        return True
+
+    def orphan_session_ids(self, known_session_ids):
+        return []
+
 
 def _make_event(text="#help", root_id="root1", conversation_id="ch1", message_id="msg1"):
     return FeishuEvent(
