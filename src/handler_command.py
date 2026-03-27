@@ -95,12 +95,16 @@ async def handle_command(
         await agent_manager.end_session(session.session_id)
         try:
             session_manager.end_session(root_message_id)
+        except ValueError as e:
+            await feishu.send_message(conversation_id, reply_id, f"Error: {e}")
+            return
+        try:
             await feishu.add_reaction(session.trigger_message_id, "DONE")
             if session.last_bot_message_id:
                 await feishu.add_reaction(session.last_bot_message_id, "DONE")
-            await feishu.send_message(conversation_id, reply_id, "Session ended.")
-        except ValueError as e:
-            await feishu.send_message(conversation_id, reply_id, f"Error: {e}")
+        except Exception:
+            logger.debug("Failed to add DONE reaction on #end")
+        await feishu.send_message(conversation_id, reply_id, "Session ended.")
 
     elif command == "#cancel":
         session = session_manager.get_session_by_root(root_message_id)
