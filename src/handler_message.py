@@ -195,6 +195,7 @@ def _start_prompt(
 
         content = [{"type": "text", "text": text}]
         try:
+            logger.debug("Sending prompt to agent: %.100s", text)
             result = await agent_manager.prompt(session.session_id, content)
             logger.debug("Prompt completed: stop_reason=%s", result.get("stopReason"))
             if notification_flush_callback:
@@ -229,6 +230,7 @@ def _start_prompt(
             try:
                 merged = session_manager.flush_buffer(root_message_id)
                 if merged:
+                    logger.debug("Buffer flushed, sending merged prompt: %.100s", merged)
                     from dataclasses import replace
 
                     merged_event = replace(event, text=merged)
