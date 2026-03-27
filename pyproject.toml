@@ -29,6 +29,7 @@ testpaths = ["tests"]
 filterwarnings = [
     "ignore::DeprecationWarning:websockets",
     "ignore::DeprecationWarning:lark_oapi",
+    "ignore::pytest.PytestUnraisableExceptionWarning",
 ]
 
 [tool.ruff]
