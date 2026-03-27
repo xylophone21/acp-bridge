@@ -110,8 +110,6 @@ async def handle_command(
             return
         try:
             await feishu.add_reaction(session.trigger_message_id, "DONE")
-            if session.last_bot_message_id:
-                await feishu.add_reaction(session.last_bot_message_id, "DONE")
         except Exception:
             logger.debug("Failed to add DONE reaction on #end")
         await feishu.send_message(conversation_id, reply_id, "Session ended.")
