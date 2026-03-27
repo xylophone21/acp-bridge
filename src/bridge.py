@@ -1,16 +1,20 @@
 """Bridge — main event loop connecting Feishu to ACP agents."""
 
 import asyncio
+import json
 import logging
 import os
 from collections import defaultdict
-from typing import Optional
+from typing import Any, Optional
 
 from acp.schema import (
     AgentMessageChunk,
     AgentPlanUpdate,
     AgentThoughtChunk,
+    ContentToolCallContent,
+    FileEditToolCallContent,
     PermissionOption,
+    TerminalToolCallContent,
     TextContentBlock,
     ToolCallProgress,
     ToolCallStart,
@@ -21,6 +25,7 @@ from src.config import Config
 from src.feishu import FeishuConnection, FeishuEvent
 from src.handler import handle_event
 from src.session import SessionManager
+from src.utils import safe_backticks
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +95,11 @@ async def run_bridge(config: Config):
     agent_text_chunks: dict[str, str] = defaultdict(str)
     agent_thought_chunks: dict[str, str] = defaultdict(str)
 
+    # Pending ToolCallStart per session — buffered until a different event arrives
+    # or the tool completes, so multiple ToolCallStart updates for the same tool
+    # are collapsed into a single message.
+    pending_tool_start: dict[str, ToolCallStart] = {}
+
     # Permission requests awaiting user response, keyed by root_message_id.
     pending_permissions: dict[str, dict] = {}
 
@@ -98,9 +108,22 @@ async def run_bridge(config: Config):
     feishu = FeishuConnection(config.feishu.app_id, config.feishu.app_secret)
     session_manager = SessionManager(config)
 
+    async def _flush_pending_tool_start(session_id: str) -> None:
+        """Send the buffered ToolCallStart message for a session, if any."""
+        start = pending_tool_start.pop(session_id, None)
+        if start is None:
+            return
+        title = start.title or ""
+        msg = f"🔧 Tool: {title}"
+        if start.raw_input:
+            msg += "\n" + _format_raw_data("Input", start.raw_input)
+        await _send_tool_msg(feishu, session_manager, session_id, msg)
+
     async def on_notification(session_id: str, update):
         """Handle agent session notifications (message chunks, tool calls, etc.)."""
+        logger.debug("Notification [%s]: %s", session_id, type(update).__name__)
         if isinstance(update, AgentMessageChunk):
+            await _flush_pending_tool_start(session_id)
             if isinstance(update.content, TextContentBlock):
                 agent_text_chunks[session_id] += update.content.text or ""
         elif isinstance(update, AgentThoughtChunk):
@@ -108,7 +131,14 @@ async def run_bridge(config: Config):
                 if isinstance(update.content, TextContentBlock):
                     agent_thought_chunks[session_id] += update.content.text or ""
         elif isinstance(update, ToolCallStart):
+            logger.debug(
+                "ToolCallStart [%s]: tool_call_id=%s title=%r has_raw_input=%s",
+                session_id, update.tool_call_id, update.title, update.raw_input is not None,
+            )
             if config.bridge.show_intermediate:
+                prev = pending_tool_start.get(session_id)
+                if prev is not None and prev.tool_call_id != update.tool_call_id:
+                    await _flush_pending_tool_start(session_id)
                 await _flush_agent_chunks(
                     session_id,
                     feishu,
@@ -116,15 +146,41 @@ async def run_bridge(config: Config):
                     agent_text_chunks,
                     agent_thought_chunks,
                 )
-                title = update.title or ""
-                await _send_tool_msg(feishu, session_manager, session_id, f"🔧 Tool: {title}")
+                if update.raw_input:
+                    # Has parameters — send immediately (discard any buffered start).
+                    pending_tool_start.pop(session_id, None)
+                    title = update.title or ""
+                    msg = f"🔧 Tool: {title}\n" + _format_raw_data("Input", update.raw_input)
+                    await _send_tool_msg(feishu, session_manager, session_id, msg)
+                else:
+                    # No parameters yet — buffer and wait for a richer update.
+                    pending_tool_start[session_id] = update
             else:
                 agent_text_chunks.pop(session_id, None)
                 agent_thought_chunks.pop(session_id, None)
         elif isinstance(update, ToolCallProgress):
-            pass
+            logger.debug(
+                "ToolCallProgress [%s]: tool_call_id=%s status=%s title=%r has_raw_output=%s",
+                session_id, update.tool_call_id, update.status, update.title, update.raw_output is not None,
+            )
+            if config.bridge.show_intermediate:
+                await _flush_pending_tool_start(session_id)
+                parts: list[str] = []
+                if update.status in ("completed", "failed"):
+                    label = "✅ Done" if update.status == "completed" else "❌ Failed"
+                    title = update.title or ""
+                    parts.append(f"{label}: {title}" if title else label)
+                if update.raw_output:
+                    parts.append(_format_raw_data("Output", update.raw_output))
+                if update.content:
+                    formatted = _format_tool_content(update.content)
+                    if formatted:
+                        parts.append(formatted)
+                if parts:
+                    await _send_tool_msg(feishu, session_manager, session_id, "\n".join(parts))
         elif isinstance(update, AgentPlanUpdate):
             if config.bridge.show_intermediate:
+                await _flush_pending_tool_start(session_id)
                 entries = update.entries or []
                 if entries:
                     await _flush_agent_chunks(
@@ -140,6 +196,7 @@ async def run_bridge(config: Config):
                     await _send_tool_msg(feishu, session_manager, session_id, plan_text)
         else:
             if config.bridge.show_intermediate:
+                await _flush_pending_tool_start(session_id)
                 await _flush_agent_chunks(
                     session_id,
                     feishu,
@@ -289,3 +346,31 @@ def _format_plan(entries: list[dict]) -> str:
         marker = {"completed": "[x]", "in_progress": "[>]", "pending": "[ ]"}.get(status, "[?]")
         lines.append(f"{marker} {entry.get('content', '')}")
     return "\n".join(lines)
+
+
+_RAW_DATA_MAX = 1000
+
+
+def _format_raw_data(label: str, data: Any) -> str:
+    """Format raw_input / raw_output as a fenced code block."""
+    text = json.dumps(data, indent=2, ensure_ascii=False) if not isinstance(data, str) else data
+    if len(text) > _RAW_DATA_MAX:
+        text = text[:_RAW_DATA_MAX] + "\n... (truncated)"
+    fence = safe_backticks(text)
+    return f"{label}:\n{fence}\n{text}\n{fence}"
+
+
+def _format_tool_content(content: list) -> str:
+    """Format tool call content items (file edits, terminal, text)."""
+    parts: list[str] = []
+    for item in content:
+        if isinstance(item, FileEditToolCallContent):
+            fence = safe_backticks(item.new_text)
+            header = f"📝 {item.path}"
+            parts.append(f"{header}\n{fence}diff\n{item.new_text}\n{fence}")
+        elif isinstance(item, TerminalToolCallContent):
+            parts.append(f"💻 Terminal: {item.terminal_id}")
+        elif isinstance(item, ContentToolCallContent):
+            if isinstance(item.content, TextContentBlock):
+                parts.append(item.content.text or "")
+    return "\n".join(parts)
