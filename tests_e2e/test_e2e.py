@@ -638,7 +638,7 @@ class TestErrorHandling:
 
     @pytest.mark.asyncio
     async def test_4_3_zombie_in_sessions(self, harness: _Harness, feishu: FakeFeishu):
-        """After agent dies, #sessions shows zombie."""
+        """After agent process dies, #sessions shows zombie."""
         import os
         import signal
 
@@ -646,8 +646,8 @@ class TestErrorHandling:
         session = harness.session_manager.get_session_by_root("z1")
         assert session is not None
 
-        # Kill agent and remove from agent manager to simulate zombie
-        entry = harness.agent_manager._agents.pop(session.session_id, None)
+        # Kill agent process (but keep entry) to simulate zombie
+        entry = harness.agent_manager._agents.get(session.session_id)
         if entry:
             os.kill(entry.process.pid, signal.SIGKILL)
             await asyncio.sleep(0.5)

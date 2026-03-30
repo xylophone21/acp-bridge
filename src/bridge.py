@@ -288,10 +288,20 @@ async def run_bridge(config: Config):
     except asyncio.CancelledError:
         ttl_task.cancel()
         logger.info("Bridge shutting down...")
+        for sid in list(agent_manager._agents):
+            try:
+                await agent_manager.end_session(sid)
+            except Exception:
+                pass
         os._exit(0)
     except KeyboardInterrupt:
         ttl_task.cancel()
         logger.info("Bridge shutting down...")
+        for sid in list(agent_manager._agents):
+            try:
+                await agent_manager.end_session(sid)
+            except Exception:
+                pass
         os._exit(0)
 
 
@@ -305,14 +315,14 @@ async def _flush_agent_chunks(
     """Flush accumulated agent streaming chunks to Feishu as messages."""
     info = session_manager.find_by_session_id(session_id)
     if info is None:
-        logger.debug("Flush skipped: session %s not found", session_id)
+        logger.debug("Flush skipped [%s]: session not found", session_id)
         return
 
     root_message_id, session = info
 
     if session_id in agent_text_chunks and agent_text_chunks[session_id]:
         text = agent_text_chunks.pop(session_id)
-        logger.debug("Flushing %d chars of text for session %s to %s: %.100s", len(text), session_id, root_message_id, text)
+        logger.debug("Flushing [%s] %d chars: %.80s", session_id, len(text), text)
         msg_id = await feishu.send_message(session.conversation_id, root_message_id, text)
         if msg_id:
             session.last_bot_message_id = msg_id

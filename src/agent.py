@@ -269,7 +269,10 @@ class AgentManager:
         return self._auto_approve.get(session_id, False)
 
     def has_session(self, session_id: str) -> bool:
-        return session_id in self._agents
+        entry = self._agents.get(session_id)
+        if entry is None:
+            return False
+        return entry.process.returncode is None
 
     def orphan_session_ids(self, known_session_ids: set[str]) -> list[str]:
         """Return agent session IDs that have no matching session in session_manager."""
