@@ -124,18 +124,14 @@ async def run_bridge(config: Config):
         if isinstance(update, AgentMessageChunk):
             await _flush_pending_tool_start(session_id)
             if isinstance(update.content, TextContentBlock):
-                chunk = update.content.text or ""
-                logger.debug("AgentMessage [%s]: %s", session_id, chunk[:200])
-                agent_text_chunks[session_id] += chunk
+                agent_text_chunks[session_id] += update.content.text or ""
         elif isinstance(update, AgentThoughtChunk):
             if config.bridge.show_thinking:
                 if isinstance(update.content, TextContentBlock):
                     agent_thought_chunks[session_id] += update.content.text or ""
         elif isinstance(update, ToolCallStart):
-            logger.debug(
-                "ToolCallStart [%s]: tool_call_id=%s title=%r has_raw_input=%s",
-                session_id, update.tool_call_id, update.title, update.raw_input is not None,
-            )
+            if update.raw_input and update.title:
+                logger.debug("🔧 [%s] %s", session_id[:8], update.title)
             if config.bridge.show_intermediate:
                 prev = pending_tool_start.get(session_id)
                 if prev is not None and prev.tool_call_id != update.tool_call_id:
@@ -160,13 +156,13 @@ async def run_bridge(config: Config):
                 agent_text_chunks.pop(session_id, None)
                 agent_thought_chunks.pop(session_id, None)
         elif isinstance(update, ToolCallProgress):
-            if update.raw_output:
-                out = json.dumps(update.raw_output, ensure_ascii=False) if not isinstance(update.raw_output, str) else update.raw_output
-                logger.debug("ToolOutput [%s] %s: %s", session_id, update.title, out[:500])
-            logger.debug(
-                "ToolCallProgress [%s]: tool_call_id=%s status=%s title=%r has_raw_output=%s",
-                session_id, update.tool_call_id, update.status, update.title, update.raw_output is not None,
-            )
+            if update.status in ("completed", "failed"):
+                icon = "✅" if update.status == "completed" else "❌"
+                if update.raw_output:
+                    out = json.dumps(update.raw_output, ensure_ascii=False) if not isinstance(update.raw_output, str) else update.raw_output
+                    logger.debug("%s [%s] %s | output: %s", icon, session_id[:8], update.title, out[:500])
+                else:
+                    logger.debug("%s [%s] %s", icon, session_id[:8], update.title)
             if config.bridge.show_intermediate:
                 await _flush_pending_tool_start(session_id)
                 parts: list[str] = []
@@ -339,7 +335,7 @@ async def _flush_agent_chunks(
 
     if session_id in agent_text_chunks and agent_text_chunks[session_id]:
         text = agent_text_chunks.pop(session_id)
-        logger.debug("Flushing [%s] %d chars: %.80s", session_id, len(text), text)
+        logger.debug("💬 [%s] %s", session_id[:8], text[:200].replace("\n", "\\n"))
         msg_id = await feishu.send_message(session.conversation_id, root_message_id, text)
         if msg_id:
             session.last_bot_message_id = msg_id
