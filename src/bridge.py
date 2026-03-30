@@ -121,11 +121,12 @@ async def run_bridge(config: Config):
 
     async def on_notification(session_id: str, update):
         """Handle agent session notifications (message chunks, tool calls, etc.)."""
-        logger.debug("Notification [%s]: %s", session_id, type(update).__name__)
         if isinstance(update, AgentMessageChunk):
             await _flush_pending_tool_start(session_id)
             if isinstance(update.content, TextContentBlock):
-                agent_text_chunks[session_id] += update.content.text or ""
+                chunk = update.content.text or ""
+                logger.debug("AgentMessage [%s]: %s", session_id, chunk[:200])
+                agent_text_chunks[session_id] += chunk
         elif isinstance(update, AgentThoughtChunk):
             if config.bridge.show_thinking:
                 if isinstance(update.content, TextContentBlock):
@@ -159,6 +160,9 @@ async def run_bridge(config: Config):
                 agent_text_chunks.pop(session_id, None)
                 agent_thought_chunks.pop(session_id, None)
         elif isinstance(update, ToolCallProgress):
+            if update.raw_output:
+                out = json.dumps(update.raw_output, ensure_ascii=False) if not isinstance(update.raw_output, str) else update.raw_output
+                logger.debug("ToolOutput [%s] %s: %s", session_id, update.title, out[:500])
             logger.debug(
                 "ToolCallProgress [%s]: tool_call_id=%s status=%s title=%r has_raw_output=%s",
                 session_id, update.tool_call_id, update.status, update.title, update.raw_output is not None,
@@ -195,6 +199,7 @@ async def run_bridge(config: Config):
                     )
                     await _send_tool_msg(feishu, session_manager, session_id, plan_text)
         else:
+            logger.debug("Notification [%s]: %s", session_id, type(update).__name__)
             if config.bridge.show_intermediate:
                 await _flush_pending_tool_start(session_id)
                 await _flush_agent_chunks(
