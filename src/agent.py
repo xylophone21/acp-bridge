@@ -49,7 +49,7 @@ SessionUpdate = Union[
 ]
 
 NotificationCallback = Callable[[str, SessionUpdate], Awaitable[None]]
-PermissionCallback = Callable[[str, list[PermissionOption]], Awaitable[Optional[str]]]
+PermissionCallback = Callable[[str, list[PermissionOption], Any], Awaitable[Optional[str]]]
 
 
 class _BridgeClient(Client):
@@ -73,7 +73,7 @@ class _BridgeClient(Client):
         tool_call: Any,
         **kwargs: Any,
     ) -> RequestPermissionResponse:
-        option_id = await self._permission_cb(session_id, options)
+        option_id = await self._permission_cb(session_id, options, tool_call)
         if option_id is None:
             return RequestPermissionResponse(outcome=DeniedOutcome(outcome="cancelled"))
         return RequestPermissionResponse(outcome=AllowedOutcome(option_id=option_id, outcome="selected"))
@@ -175,7 +175,7 @@ class AgentManager:
         stack = AsyncExitStack()
         try:
             conn, process = await stack.enter_async_context(
-                acp.spawn_agent_process(client, config.command, *config.args, env=env)
+                acp.spawn_agent_process(client, config.command, *config.args, env=env, cwd=workspace)
             )
             logger.debug("Agent process spawned (pid=%s)", process.pid)
 
@@ -186,7 +186,8 @@ class AgentManager:
             logger.debug("Agent initialized: %s", init_resp.agent_info)
 
             session_resp = await conn.new_session(cwd=workspace)
-            logger.debug("Session created: %s", session_resp.session_id)
+            mode_id = getattr(getattr(session_resp, 'modes', None), 'current_mode_id', None)
+            logger.info("Session created: %s (mode=%s)", session_resp.session_id, mode_id)
         except BaseException:
             await stack.aclose()
             raise

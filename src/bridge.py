@@ -205,7 +205,7 @@ async def run_bridge(config: Config):
                     agent_thought_chunks,
                 )
 
-    async def on_permission(session_id: str, options: list[PermissionOption]) -> Optional[str]:
+    async def on_permission(session_id: str, options: list[PermissionOption], tool_call: Any = None) -> Optional[str]:
         """Handle permission requests from agents."""
         info = session_manager.find_by_session_id(session_id)
 
@@ -221,9 +221,21 @@ async def run_bridge(config: Config):
             return None
 
         # Format and send permission request
+        parts = ["⚠️ Permission Required"]
+        if tool_call:
+            title = getattr(tool_call, 'title', None)
+            raw_input = getattr(tool_call, 'raw_input', None)
+            if title:
+                parts.append(f"\n🔧 {title}")
+            if raw_input:
+                detail = json.dumps(raw_input, indent=2, ensure_ascii=False) if not isinstance(raw_input, str) else raw_input
+                if len(detail) > 500:
+                    detail = detail[:500] + "\n... (truncated)"
+                fence = safe_backticks(detail)
+                parts.append(f"{fence}\n{detail}\n{fence}")
         options_text = "\n".join(f"{i + 1}. {opt.name}" for i, opt in enumerate(options))
-        msg = f"⚠️ Permission Required\n\n{options_text}\n\nReply with the number to approve, or 'deny' to reject."
-        await feishu.send_message(session.conversation_id, root_message_id, msg)
+        parts.append(f"\n{options_text}\n\nReply with the number to approve, or 'deny' to reject.")
+        await feishu.send_message(session.conversation_id, root_message_id, "\n".join(parts))
 
         future: asyncio.Future[Optional[str]] = asyncio.get_running_loop().create_future()
         pending_permissions[root_message_id] = {"options": options, "future": future}
