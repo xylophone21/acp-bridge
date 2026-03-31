@@ -31,6 +31,9 @@ class FakeFeishu:
     async def remove_reaction(self, message_id, reaction_id) -> bool:
         return True
 
+    async def get_user_info(self, open_id) -> tuple:
+        return "Test User", "testuser@example.com"
+
 
 class FakeAgentManager:
     def __init__(self, prompt_result=None, prompt_error=None, new_session_error=None):
@@ -304,7 +307,8 @@ class TestTouchAndPrompt:
 
         assert len(agent_mgr.prompts) == 1
         assert agent_mgr.prompts[0][0] == "s1"
-        assert agent_mgr.prompts[0][1] == [{"type": "text", "text": "hello"}]
+        prompt_text = agent_mgr.prompts[0][1][0]["text"]
+        assert prompt_text == "[Current user: Test User, testuser@example.com]\nhello"
 
     @pytest.mark.asyncio
     async def test_session_set_busy_before_prompt(self):
@@ -388,7 +392,8 @@ class TestNewSessionThenPrompt:
         # Session created and prompt sent
         assert "root1" in session_mgr.sessions
         assert len(agent_mgr.prompts) == 1
-        assert agent_mgr.prompts[0][1] == [{"type": "text", "text": "hello agent"}]
+        prompt_text = agent_mgr.prompts[0][1][0]["text"]
+        assert prompt_text == "[Current user: Test User, testuser@example.com]\nhello agent"
 
     @pytest.mark.asyncio
     async def test_follow_up_during_init_is_buffered_after_first_prompt(self):
@@ -428,8 +433,8 @@ class TestNewSessionThenPrompt:
         await asyncio.sleep(0.15)
 
         assert [prompt[1][0]["text"] for prompt in agent_mgr.prompts] == [
-            "first",
-            "[bob]: second",
+            "[Current user: Test User, testuser@example.com]\nfirst",
+            "[Current user: Test User, testuser@example.com]\n[bob]: second",
         ]
 
     @pytest.mark.asyncio

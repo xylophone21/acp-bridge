@@ -284,10 +284,11 @@ async def run_bridge(config: Config):
         while True:
             event = await event_queue.get()
             logger.info(
-                "[%s] Received: %s (root=%s)",
+                "[%s] Received: %s (root=%s, sender=%s)",
                 event.message_id,
                 event.clean_text[:50] or "(empty)",
                 event.root_id,
+                event.sender_id,
             )
 
             async def _safe_handle(ev):

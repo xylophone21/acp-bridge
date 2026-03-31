@@ -193,9 +193,22 @@ def _start_prompt(
             except Exception:
                 logger.debug("Failed to add typing indicator", exc_info=True)
 
-        content = [{"type": "text", "text": text}]
+        # Resolve sender identity for the agent
+        name, email = await feishu.get_user_info(event.sender_id)
+        if name and email:
+            identity = f"{name}, {email}"
+        elif name:
+            identity = name
+        elif email:
+            identity = email
+        else:
+            identity = "unknown user"
+            logger.debug("Could not resolve user info for sender %s", event.sender_id)
+        prompt_text = f"[Current user: {identity}]\n{text}"
+
+        content = [{"type": "text", "text": prompt_text}]
         try:
-            logger.debug("[%s] Sending prompt to agent: %.100s", reply_id, text)
+            logger.debug("[%s] Sending prompt to agent: %.100s", reply_id, prompt_text)
             result = await agent_manager.prompt(session.session_id, content)
             logger.debug("Prompt completed: stop_reason=%s", result.get("stopReason"))
             if notification_flush_callback:

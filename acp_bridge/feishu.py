@@ -163,6 +163,7 @@ class FeishuConnection:
         self._event_callback: Optional[EventCallback] = None
         self._client = lark.Client.builder().app_id(app_id).app_secret(app_secret).build()
         self._bot_open_id: Optional[str] = None
+        self._user_info_cache: dict[str, tuple[Optional[str], Optional[str]]] = {}
 
     async def init(self) -> None:
         """Fetch and cache bot's open_id. Call before connect().
@@ -451,3 +452,25 @@ class FeishuConnection:
                 return _ApiResult(code=0, data=data["tenant_access_token"])
             logger.error("Failed to get tenant token: %s", data.get("msg"))
             return _ApiResult(code=code)
+
+    async def get_user_info(self, open_id: str) -> tuple[Optional[str], Optional[str]]:
+        """Get (name, email) by open_id via SDK. Returns (None, None) on failure."""
+        if not open_id:
+            return None, None
+        if open_id in self._user_info_cache:
+            return self._user_info_cache[open_id]
+
+        from lark_oapi.api.contact.v3 import GetUserRequest
+
+        try:
+            req = GetUserRequest.builder().user_id(open_id).user_id_type("open_id").build()
+            resp = await _retry_on_rate_limit(lambda: self._client.contact.v3.user.aget(req))  # type: ignore[union-attr]
+            if resp.success() and resp.data and resp.data.user:
+                user = resp.data.user
+                result = (user.name, user.email)
+                self._user_info_cache[open_id] = result
+                return result
+            logger.warning("Cannot get user info for %s: code=%s msg=%s", open_id, resp.code, resp.msg)
+        except Exception:
+            logger.warning("Cannot get user info for %s", open_id, exc_info=True)
+        return None, None

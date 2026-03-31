@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections import defaultdict
-from typing import Optional
+from typing import Any, Optional
 
 import pytest
 
@@ -56,6 +56,9 @@ class FakeFeishu:
 
     async def remove_reaction(self, message_id: str, reaction_id: str) -> None:
         self.removed_reactions.append((message_id, reaction_id))
+
+    async def get_user_info(self, open_id: str) -> tuple:
+        return "Test User", "testuser@example.com"
 
     def last_reply(self) -> str:
         assert self.messages, "No messages sent"

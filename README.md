@@ -29,6 +29,8 @@ Core features:
    - `im:message.p2p_msg:readonly` — receive P2P messages
    - `im:resource` — download file resources from messages
    - `im:chat:readonly` — read chat info
+   - `contact:contact.base:readonly` — get user name (optional, for identifying sender in prompts)
+   - `contact:user.email:readonly` — get user email (optional, for matching accounts in external systems)
 
 ### Steps
 
