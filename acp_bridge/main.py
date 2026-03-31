@@ -3,10 +3,34 @@
 import argparse
 import asyncio
 import logging
+import logging.handlers
 import sys
+from pathlib import Path
 
 from acp_bridge.bridge import run_bridge
 from acp_bridge.config import Config
+
+
+def _setup_logging(level: str, log_dir: str | None = None) -> None:
+    fmt = "[%(asctime)s] [%(levelname)s] [%(name)s]: %(message)s"
+    log_level = getattr(logging, level.upper(), logging.INFO)
+    handlers: list[logging.Handler] = [logging.StreamHandler()]
+
+    if log_dir:
+        path = Path(log_dir)
+        path.mkdir(parents=True, exist_ok=True)
+        file_handler = logging.handlers.TimedRotatingFileHandler(
+            path / "bridge.log", when="midnight", backupCount=30,
+        )
+        file_handler.namer = lambda name: name.replace("bridge.log.", "bridge-") + ".log"
+        handlers.append(file_handler)
+
+    logging.basicConfig(level=log_level, format=fmt, handlers=handlers)
+
+    for name in ("httpx", "httpcore", "urllib3", "Lark", "websockets"):
+        logger = logging.getLogger(name)
+        logger.setLevel(logging.WARNING)
+        logger.handlers.clear()
 
 
 def main():
@@ -20,22 +44,14 @@ def main():
     run_parser = sub.add_parser("run", help="Run the bridge")
     run_parser.add_argument("--config", default="bridge.toml")
     run_parser.add_argument("--log-level", default="INFO")
+    run_parser.add_argument("--log-dir", default=None, help="Directory for daily rotated log files")
 
     args = parser.parse_args()
 
     if args.command == "init":
         Config.init(args.config, args.override)
     elif args.command == "run":
-        logging.basicConfig(
-            level=getattr(logging, args.log_level.upper(), logging.INFO),
-            format="[%(asctime)s] [%(levelname)s] [%(name)s]: %(message)s",
-        )
-        # Silence noisy third-party loggers
-        for name in ("httpx", "httpcore", "urllib3", "Lark", "websockets"):
-            logger = logging.getLogger(name)
-            logger.setLevel(logging.WARNING)
-            logger.handlers.clear()
-
+        _setup_logging(args.log_level, args.log_dir)
         config = Config.load(args.config)
         asyncio.run(run_bridge(config))
     else:
