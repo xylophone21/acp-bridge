@@ -2,11 +2,11 @@
 
 ## 简介
 
-对 AgentBridge（飞书聊天机器人桥接服务）进行会话管理重构和功能改造。主要变更包括：移除 `#new` 指令，改为基于飞书消息的引用关系自动管理会话生命周期；引入 LRU 和定时淘汰机制控制资源占用；简化配置文件结构（取消多 agent 配置）；清理历史遗留命名；完善文档。
+对 ACP Bridge（飞书聊天机器人桥接服务）进行会话管理重构和功能改造。主要变更包括：移除 `#new` 指令，改为基于飞书消息的引用关系自动管理会话生命周期；引入 LRU 和定时淘汰机制控制资源占用；简化配置文件结构（取消多 agent 配置）；清理历史遗留命名；完善文档。
 
 ## 术语表
 
-- **Bridge**: AgentBridge 桥接服务主进程，负责连接飞书与 ACP agent
+- **Bridge**: ACP Bridge 桥接服务主进程，负责连接飞书与 ACP agent
 - **Session_Manager**: 会话管理器，负责会话的创建、查找、淘汰和生命周期管理
 - **Session**: 一次用户与 agent 之间的对话上下文，包含 agent 进程句柄和消息历史
 - **Root_Message**: 飞书消息引用链（通过 parent_id 关联）的根消息，即引用链中最顶层的那条消息，不一定是触发会话创建的消息
@@ -122,4 +122,4 @@
 2. THE README SHALL 包含飞书应用创建和配置的基本指引，包括需要开启"接收群聊中所有消息"权限的说明
 3. THE README SHALL 包含可用指令的说明列表（反映重构后的指令集，不含 #new、#agents 和 ! shell 指令）
 4. THE README SHALL 根据 MIT 协议要求，明确声明本项目源自 Juan 项目（https://github.com/DiscreteTom/juan），并保留原始版权信息
-5. THE README SHALL 包含项目简介，说明 AgentBridge 的用途和核心功能
+5. THE README SHALL 包含项目简介，说明 ACP Bridge 的用途和核心功能

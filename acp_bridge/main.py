@@ -1,16 +1,16 @@
-"""Main entry point for the agent-bridge application."""
+"""Main entry point for the acp-bridge application."""
 
 import argparse
 import asyncio
 import logging
 import sys
 
-from agent_bridge.bridge import run_bridge
-from agent_bridge.config import Config
+from acp_bridge.bridge import run_bridge
+from acp_bridge.config import Config
 
 
 def main():
-    parser = argparse.ArgumentParser(description="AgentBridge - Feishu to ACP Bridge")
+    parser = argparse.ArgumentParser(description="ACP Bridge - Feishu to ACP Bridge")
     sub = parser.add_subparsers(dest="command")
 
     init_parser = sub.add_parser("init", help="Generate a scaffold config file")

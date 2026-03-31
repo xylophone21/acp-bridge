@@ -29,7 +29,7 @@ from acp.schema import (
     UserMessageChunk,
 )
 
-from agent_bridge.config import AgentConfig
+from acp_bridge.config import AgentConfig
 
 logger = logging.getLogger(__name__)
 
@@ -184,7 +184,7 @@ class AgentManager:
 
             init_resp = await conn.initialize(
                 protocol_version=acp.PROTOCOL_VERSION,
-                client_info=acp.schema.Implementation(name="agent-bridge", version="0.1.0"),
+                client_info=acp.schema.Implementation(name="acp-bridge", version="0.1.0"),
             )
             logger.debug("Agent initialized: %s", init_resp.agent_info)
 

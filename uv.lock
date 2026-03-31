@@ -3,7 +3,7 @@ revision = 3
 requires-python = ">=3.11"
 
 [[package]]
-name = "agent-bridge"
+name = "acp-bridge"
 version = "0.3.0"
 source = { editable = "." }
 dependencies = [

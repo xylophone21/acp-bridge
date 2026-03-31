@@ -2,8 +2,8 @@
 
 import pytest
 
-from agent_bridge.agent import AgentManager
-from agent_bridge.config import AgentConfig
+from acp_bridge.agent import AgentManager
+from acp_bridge.config import AgentConfig
 
 
 class TestAgentManager:

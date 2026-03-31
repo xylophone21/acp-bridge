@@ -2,7 +2,7 @@
 
 ## 概述
 
-本设计文档描述 AgentBridge 会话管理重构的技术方案。核心变更包括：
+本设计文档描述 ACP Bridge 会话管理重构的技术方案。核心变更包括：
 
 1. **自动会话创建**：移除 `#new` / `#agents` 指令，改为 @机器人 自动创建会话
 2. **基于消息引用链的会话路由**：通过 `parent_id` 沿引用链向上查找 Root_Message，以 Root_Message 的 `message_id` 作为 Session 索引 key

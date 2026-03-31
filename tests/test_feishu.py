@@ -6,7 +6,7 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from agent_bridge.feishu import FeishuConnection, FeishuEvent, FeishuFile
+from acp_bridge.feishu import FeishuConnection, FeishuEvent, FeishuFile
 
 
 class TestFeishuEvent:

@@ -134,7 +134,7 @@
     - **验证: 需求 6.1, 6.2**
 
 - [x] 10. 完善 README 文档
-  - [x] 10.1 重写 `README.md`：包含项目简介（AgentBridge 用途和核心功能）；完整安装步骤（Python 版本、依赖安装、配置文件生成、启动命令）；飞书应用创建和配置指引（含"接收群聊中所有消息"权限说明）；可用指令列表（不含 #new、#agents、! shell）；MIT 协议声明，注明源自 Juan 项目（https://github.com/DiscreteTom/juan）并保留原始版权信息
+  - [x] 10.1 重写 `README.md`：包含项目简介（ACP Bridge 用途和核心功能）；完整安装步骤（Python 版本、依赖安装、配置文件生成、启动命令）；飞书应用创建和配置指引（含"接收群聊中所有消息"权限说明）；可用指令列表（不含 #new、#agents、! shell）；MIT 协议声明，注明源自 Juan 项目（https://github.com/DiscreteTom/juan）并保留原始版权信息
     - _需求: 8.1, 8.2, 8.3, 8.4, 8.5_
 
 - [x] 11. 添加 Hypothesis 依赖

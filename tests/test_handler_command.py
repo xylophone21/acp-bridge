@@ -5,9 +5,9 @@ from collections import OrderedDict
 
 import pytest
 
-from agent_bridge.feishu import FeishuEvent
-from agent_bridge.handler_command import HELP_MESSAGE, _format_relative_time, handle_command
-from agent_bridge.session import SessionState
+from acp_bridge.feishu import FeishuEvent
+from acp_bridge.handler_command import HELP_MESSAGE, _format_relative_time, handle_command
+from acp_bridge.session import SessionState
 
 # ---------------------------------------------------------------------------
 # Fakes

@@ -1,5 +1,5 @@
 [project]
-name = "agent-bridge"
+name = "acp-bridge"
 version = "0.3.0"
 description = "Bridge Feishu to ACP-compatible agents with automatic session management for non-developers."
 readme = "README.md"
@@ -15,7 +15,7 @@ dependencies = [
 ]
 
 [project.scripts]
-agent-bridge = "agent_bridge.main:main"
+acp-bridge = "acp_bridge.main:main"
 
 [dependency-groups]
 dev = [
@@ -29,6 +29,9 @@ dev = [
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["acp_bridge"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
@@ -51,7 +54,7 @@ select = ["E", "F", "W", "I"]
 
 [tool.pyright]
 pythonVersion = "3.11"
-include = ["agent_bridge"]
+include = ["acp_bridge"]
 
 [tool.semantic_release]
 version_toml = ["pyproject.toml:project.version"]

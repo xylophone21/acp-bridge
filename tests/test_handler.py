@@ -11,8 +11,8 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from agent_bridge.feishu import FeishuEvent
-from agent_bridge.session import SessionState
+from acp_bridge.feishu import FeishuEvent
+from acp_bridge.session import SessionState
 
 
 class FakeFeishu:
@@ -84,13 +84,13 @@ class TestHandleEvent:
     @pytest.mark.asyncio
     async def test_no_session_not_mention_bot_ignored(self):
         """No session + not @bot → message ignored (no handler called)."""
-        from agent_bridge.handler import handle_event
+        from acp_bridge.handler import handle_event
 
         feishu = FakeFeishu()
         event = _make_event(text="hello", is_mention_bot=False)
 
-        with patch("agent_bridge.handler.handle_command") as mock_cmd, \
-             patch("agent_bridge.handler.handle_message") as mock_msg:
+        with patch("acp_bridge.handler.handle_command") as mock_cmd, \
+             patch("acp_bridge.handler.handle_message") as mock_msg:
             await handle_event(
                 event, feishu, FakeConfig(), FakeAgentManager(),
                 FakeSessionManager(), {}, None,
@@ -106,13 +106,13 @@ class TestHandleEvent:
     @pytest.mark.asyncio
     async def test_no_session_mention_bot_plain_text_calls_handle_message(self):
         """No session + @bot + plain text → handle_message called (auto-create)."""
-        from agent_bridge.handler import handle_event
+        from acp_bridge.handler import handle_event
 
         feishu = FakeFeishu()
         event = _make_event(text="please help me", is_mention_bot=True)
 
-        with patch("agent_bridge.handler.handle_message", new_callable=AsyncMock) as mock_msg, \
-             patch("agent_bridge.handler.handle_command", new_callable=AsyncMock) as mock_cmd:
+        with patch("acp_bridge.handler.handle_message", new_callable=AsyncMock) as mock_msg, \
+             patch("acp_bridge.handler.handle_command", new_callable=AsyncMock) as mock_cmd:
             await handle_event(
                 event, feishu, FakeConfig(), FakeAgentManager(),
                 FakeSessionManager(), {}, None,
@@ -130,7 +130,7 @@ class TestHandleEvent:
     @pytest.mark.asyncio
     async def test_existing_session_plain_text_routes_to_session(self):
         """Existing session + plain text → handle_message called (route to session)."""
-        from agent_bridge.handler import handle_event
+        from acp_bridge.handler import handle_event
 
         feishu = FakeFeishu()
         session = SessionState(session_id="sess1", conversation_id="ch1")
@@ -144,8 +144,8 @@ class TestHandleEvent:
             is_mention_bot=False,
         )
 
-        with patch("agent_bridge.handler.handle_message", new_callable=AsyncMock) as mock_msg, \
-             patch("agent_bridge.handler.handle_command", new_callable=AsyncMock) as mock_cmd:
+        with patch("acp_bridge.handler.handle_message", new_callable=AsyncMock) as mock_msg, \
+             patch("acp_bridge.handler.handle_command", new_callable=AsyncMock) as mock_cmd:
             await handle_event(
                 event, feishu, FakeConfig(), FakeAgentManager(),
                 sm, {}, None,
@@ -161,7 +161,7 @@ class TestHandleEvent:
     @pytest.mark.asyncio
     async def test_existing_session_command_no_mention_needed(self):
         """Existing session + # command → handle_command called (no @bot needed)."""
-        from agent_bridge.handler import handle_event
+        from acp_bridge.handler import handle_event
 
         feishu = FakeFeishu()
         session = SessionState(session_id="sess1", conversation_id="ch1")
@@ -174,8 +174,8 @@ class TestHandleEvent:
             is_mention_bot=False,  # Not mentioning bot
         )
 
-        with patch("agent_bridge.handler.handle_command", new_callable=AsyncMock) as mock_cmd, \
-             patch("agent_bridge.handler.handle_message", new_callable=AsyncMock) as mock_msg:
+        with patch("acp_bridge.handler.handle_command", new_callable=AsyncMock) as mock_cmd, \
+             patch("acp_bridge.handler.handle_message", new_callable=AsyncMock) as mock_msg:
             await handle_event(
                 event, feishu, FakeConfig(), FakeAgentManager(),
                 sm, {}, None,
@@ -191,13 +191,13 @@ class TestHandleEvent:
     @pytest.mark.asyncio
     async def test_no_session_mention_bot_command_calls_handle_command(self):
         """No session + @bot + # command → handle_command called."""
-        from agent_bridge.handler import handle_event
+        from acp_bridge.handler import handle_event
 
         feishu = FakeFeishu()
         event = _make_event(text="#help", is_mention_bot=True)
 
-        with patch("agent_bridge.handler.handle_command", new_callable=AsyncMock) as mock_cmd, \
-             patch("agent_bridge.handler.handle_message", new_callable=AsyncMock) as mock_msg:
+        with patch("acp_bridge.handler.handle_command", new_callable=AsyncMock) as mock_cmd, \
+             patch("acp_bridge.handler.handle_message", new_callable=AsyncMock) as mock_msg:
             await handle_event(
                 event, feishu, FakeConfig(), FakeAgentManager(),
                 FakeSessionManager(), {}, None,
@@ -210,13 +210,13 @@ class TestHandleEvent:
     @pytest.mark.asyncio
     async def test_no_session_not_mention_bot_command_ignored(self):
         """No session + not @bot + # command → ignored."""
-        from agent_bridge.handler import handle_event
+        from acp_bridge.handler import handle_event
 
         feishu = FakeFeishu()
         event = _make_event(text="#help", is_mention_bot=False)
 
-        with patch("agent_bridge.handler.handle_command", new_callable=AsyncMock) as mock_cmd, \
-             patch("agent_bridge.handler.handle_message", new_callable=AsyncMock) as mock_msg:
+        with patch("acp_bridge.handler.handle_command", new_callable=AsyncMock) as mock_cmd, \
+             patch("acp_bridge.handler.handle_message", new_callable=AsyncMock) as mock_msg:
             await handle_event(
                 event, feishu, FakeConfig(), FakeAgentManager(),
                 FakeSessionManager(), {}, None,
@@ -233,7 +233,7 @@ class TestHandleEvent:
         """Pending permission response handled correctly with root_message_id."""
         from acp.schema import PermissionOption
 
-        from agent_bridge.handler import handle_event
+        from acp_bridge.handler import handle_event
 
         feishu = FakeFeishu()
         future = asyncio.get_event_loop().create_future()
@@ -263,7 +263,7 @@ class TestHandleEvent:
         """Permission keyed by message_id when root_id is absent."""
         from acp.schema import PermissionOption
 
-        from agent_bridge.handler import handle_event
+        from acp_bridge.handler import handle_event
 
         feishu = FakeFeishu()
         future = asyncio.get_event_loop().create_future()
@@ -287,7 +287,7 @@ class TestHandleEvent:
     @pytest.mark.asyncio
     async def test_root_message_id_uses_root_id_when_present(self):
         """root_message_id = root_id when root_id is present."""
-        from agent_bridge.handler import handle_event
+        from acp_bridge.handler import handle_event
 
         feishu = FakeFeishu()
         session = SessionState(session_id="sess1", conversation_id="ch1")
@@ -300,7 +300,7 @@ class TestHandleEvent:
             is_mention_bot=False,
         )
 
-        with patch("agent_bridge.handler.handle_message", new_callable=AsyncMock) as mock_msg:
+        with patch("acp_bridge.handler.handle_message", new_callable=AsyncMock) as mock_msg:
             await handle_event(
                 event, feishu, FakeConfig(), FakeAgentManager(),
                 sm, {}, None,
@@ -312,7 +312,7 @@ class TestHandleEvent:
     @pytest.mark.asyncio
     async def test_root_message_id_uses_message_id_when_no_root_id(self):
         """root_message_id = message_id when root_id is absent."""
-        from agent_bridge.handler import handle_event
+        from acp_bridge.handler import handle_event
 
         feishu = FakeFeishu()
         session = SessionState(session_id="sess1", conversation_id="ch1")
@@ -325,7 +325,7 @@ class TestHandleEvent:
             is_mention_bot=False,
         )
 
-        with patch("agent_bridge.handler.handle_message", new_callable=AsyncMock) as mock_msg:
+        with patch("acp_bridge.handler.handle_message", new_callable=AsyncMock) as mock_msg:
             await handle_event(
                 event, feishu, FakeConfig(), FakeAgentManager(),
                 sm, {}, None,
@@ -338,7 +338,7 @@ class TestHandleEvent:
     @pytest.mark.asyncio
     async def test_existing_session_mention_bot_plain_text_routes_to_session(self):
         """Existing session + @bot + plain text → routes to existing session (no new session)."""
-        from agent_bridge.handler import handle_event
+        from acp_bridge.handler import handle_event
 
         feishu = FakeFeishu()
         session = SessionState(session_id="sess1", conversation_id="ch1")
@@ -351,7 +351,7 @@ class TestHandleEvent:
             is_mention_bot=True,  # Mentioning bot again
         )
 
-        with patch("agent_bridge.handler.handle_message", new_callable=AsyncMock) as mock_msg:
+        with patch("acp_bridge.handler.handle_message", new_callable=AsyncMock) as mock_msg:
             await handle_event(
                 event, feishu, FakeConfig(), FakeAgentManager(),
                 sm, {}, None,
@@ -391,7 +391,7 @@ class TestHandleEventProperties:
     ):
         """For any @bot non-command message with no existing session,
         handle_message is called with root_message_id = root_id."""
-        from agent_bridge.handler import handle_event
+        from acp_bridge.handler import handle_event
 
         event = FeishuEvent(
             conversation_id=chat_id,
@@ -403,8 +403,8 @@ class TestHandleEventProperties:
             sender_id=sender_name,
         )
 
-        with patch("agent_bridge.handler.handle_message", new_callable=AsyncMock) as mock_msg, \
-             patch("agent_bridge.handler.handle_command", new_callable=AsyncMock) as mock_cmd:
+        with patch("acp_bridge.handler.handle_message", new_callable=AsyncMock) as mock_msg, \
+             patch("acp_bridge.handler.handle_command", new_callable=AsyncMock) as mock_cmd:
             await handle_event(
                 event, FakeFeishu(), FakeConfig(), FakeAgentManager(),
                 FakeSessionManager(), {}, None,
@@ -431,7 +431,7 @@ class TestHandleEventProperties:
     ):
         """For any non-command message whose root_message_id matches an existing session,
         handle_message is called and handle_command is NOT called, no new session created."""
-        from agent_bridge.handler import handle_event
+        from acp_bridge.handler import handle_event
 
         session = SessionState(session_id="sess1", conversation_id=chat_id)
         sm = FakeSessionManager(sessions={root_id: session})
@@ -446,8 +446,8 @@ class TestHandleEventProperties:
             sender_id=sender_name,
         )
 
-        with patch("agent_bridge.handler.handle_message", new_callable=AsyncMock) as mock_msg, \
-             patch("agent_bridge.handler.handle_command", new_callable=AsyncMock) as mock_cmd:
+        with patch("acp_bridge.handler.handle_message", new_callable=AsyncMock) as mock_msg, \
+             patch("acp_bridge.handler.handle_command", new_callable=AsyncMock) as mock_cmd:
             await handle_event(
                 event, FakeFeishu(), FakeConfig(), FakeAgentManager(),
                 sm, {}, None,
@@ -475,7 +475,7 @@ class TestHandleEventProperties:
     ):
         """For any message with mention=False and no existing session,
         neither handle_message nor handle_command is called."""
-        from agent_bridge.handler import handle_event
+        from acp_bridge.handler import handle_event
 
         event = FeishuEvent(
             conversation_id=chat_id,
@@ -487,8 +487,8 @@ class TestHandleEventProperties:
             sender_id=sender_name,
         )
 
-        with patch("agent_bridge.handler.handle_message", new_callable=AsyncMock) as mock_msg, \
-             patch("agent_bridge.handler.handle_command", new_callable=AsyncMock) as mock_cmd:
+        with patch("acp_bridge.handler.handle_message", new_callable=AsyncMock) as mock_msg, \
+             patch("acp_bridge.handler.handle_command", new_callable=AsyncMock) as mock_cmd:
             await handle_event(
                 event, FakeFeishu(), FakeConfig(), FakeAgentManager(),
                 FakeSessionManager(), {}, None,
@@ -513,7 +513,7 @@ class TestHandleEventProperties:
     ):
         """For any # command within an existing session,
         handle_command is called regardless of is_mention_bot."""
-        from agent_bridge.handler import handle_event
+        from acp_bridge.handler import handle_event
 
         session = SessionState(session_id="sess1", conversation_id=chat_id)
         sm = FakeSessionManager(sessions={root_id: session})
@@ -528,8 +528,8 @@ class TestHandleEventProperties:
             sender_id=sender_name,
         )
 
-        with patch("agent_bridge.handler.handle_command", new_callable=AsyncMock) as mock_cmd, \
-             patch("agent_bridge.handler.handle_message", new_callable=AsyncMock) as mock_msg:
+        with patch("acp_bridge.handler.handle_command", new_callable=AsyncMock) as mock_cmd, \
+             patch("acp_bridge.handler.handle_message", new_callable=AsyncMock) as mock_msg:
             await handle_event(
                 event, FakeFeishu(), FakeConfig(), FakeAgentManager(),
                 sm, {}, None,
@@ -554,7 +554,7 @@ class TestHandleEventProperties:
     ):
         """For any # command with no existing session,
         handle_command is called only when is_mention_bot=True."""
-        from agent_bridge.handler import handle_event
+        from acp_bridge.handler import handle_event
 
         event = FeishuEvent(
             conversation_id=chat_id,
@@ -566,8 +566,8 @@ class TestHandleEventProperties:
             sender_id=sender_name,
         )
 
-        with patch("agent_bridge.handler.handle_command", new_callable=AsyncMock) as mock_cmd, \
-             patch("agent_bridge.handler.handle_message", new_callable=AsyncMock) as mock_msg:
+        with patch("acp_bridge.handler.handle_command", new_callable=AsyncMock) as mock_cmd, \
+             patch("acp_bridge.handler.handle_message", new_callable=AsyncMock) as mock_msg:
             await handle_event(
                 event, FakeFeishu(), FakeConfig(), FakeAgentManager(),
                 FakeSessionManager(), {}, None,

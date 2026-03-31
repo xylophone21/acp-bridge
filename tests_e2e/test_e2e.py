@@ -1,4 +1,4 @@
-"""E2E tests for AgentBridge — runs real kiro-cli agent, mocks Feishu layer.
+"""E2E tests for ACP Bridge — runs real kiro-cli agent, mocks Feishu layer.
 
 Verifies the full pipeline: event → handler → agent (real) → notification → reply.
 
@@ -15,11 +15,11 @@ from typing import Optional
 
 import pytest
 
-from agent_bridge.agent import AgentManager
-from agent_bridge.config import AgentConfig, BridgeConfig, Config, FeishuConfig
-from agent_bridge.feishu import FeishuEvent
-from agent_bridge.handler import handle_event
-from agent_bridge.session import SessionManager
+from acp_bridge.agent import AgentManager
+from acp_bridge.config import AgentConfig, BridgeConfig, Config, FeishuConfig
+from acp_bridge.feishu import FeishuEvent
+from acp_bridge.handler import handle_event
+from acp_bridge.session import SessionManager
 
 logging.basicConfig(level=logging.DEBUG, format="[%(levelname)s] [%(name)s]: %(message)s")
 logger = logging.getLogger(__name__)

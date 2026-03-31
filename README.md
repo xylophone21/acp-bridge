@@ -1,6 +1,6 @@
-# AgentBridge
+# ACP Bridge
 
-AgentBridge is a bridge service that connects [Feishu (Lark)](https://www.feishu.cn/) group chats to ACP-compatible AI agents (such as [Kiro CLI](https://kiro.dev/cli/)).
+ACP Bridge is a bridge service that connects [Feishu (Lark)](https://www.feishu.cn/) group chats to ACP-compatible AI agents (such as [Kiro CLI](https://kiro.dev/cli/)).
 
 Core features:
 
@@ -41,7 +41,7 @@ Core features:
 2. Generate a config file:
 
    ```bash
-   uv run python -m agent_bridge.main init
+   uv run python -m acp_bridge.main init
    ```
 
 3. Edit `bridge.toml` with your Feishu app credentials:
@@ -70,12 +70,12 @@ Core features:
 4. Start the service:
 
    ```bash
-   uv run python -m agent_bridge.main run
+   uv run python -m acp_bridge.main run
    ```
 
 > **Tip**: It's recommended to run in tmux so it persists in the background:
 > ```bash
-> tmux new -s agent-bridge "uv run python -m agent_bridge.main run"
+> tmux new -s acp-bridge "uv run python -m acp_bridge.main run"
 > ```
 
 ## Commands

@@ -14,8 +14,8 @@ import asyncio
 import functools
 import os
 
-from agent_bridge.config import Config
-from agent_bridge.feishu import FeishuConnection, FeishuEvent
+from acp_bridge.config import Config
+from acp_bridge.feishu import FeishuConnection, FeishuEvent
 
 # Force unbuffered output
 print = functools.partial(print, flush=True)

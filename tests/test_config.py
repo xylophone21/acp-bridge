@@ -6,7 +6,7 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from agent_bridge.config import Config
+from acp_bridge.config import Config
 
 
 class TestConfigLoad:

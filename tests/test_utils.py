@@ -1,6 +1,6 @@
 """Tests for src/utils.py"""
 
-from agent_bridge.utils import expand_path, safe_backticks
+from acp_bridge.utils import expand_path, safe_backticks
 
 
 class TestExpandPath:
