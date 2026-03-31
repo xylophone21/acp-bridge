@@ -137,12 +137,13 @@ async def run_bridge(config: Config):
                 if prev is not None and prev.tool_call_id != update.tool_call_id:
                     await _flush_pending_tool_start(session_id)
                 await _flush_agent_chunks(
-                    session_id,
-                    feishu,
-                    session_manager,
-                    agent_text_chunks,
-                    agent_thought_chunks,
-                )
+                                    session_id,
+                                    feishu,
+                                    session_manager,
+                                    agent_text_chunks,
+                                    agent_thought_chunks,
+                                    config,
+                                )
                 if update.raw_input:
                     # Has parameters — send immediately (discard any buffered start).
                     pending_tool_start.pop(session_id, None)
@@ -188,12 +189,13 @@ async def run_bridge(config: Config):
                 entries = update.entries or []
                 if entries:
                     await _flush_agent_chunks(
-                        session_id,
-                        feishu,
-                        session_manager,
-                        agent_text_chunks,
-                        agent_thought_chunks,
-                    )
+                                        session_id,
+                                        feishu,
+                                        session_manager,
+                                        agent_text_chunks,
+                                        agent_thought_chunks,
+                                        config,
+                                    )
                     plan_text = _format_plan(
                         [e.model_dump(mode="json", by_alias=True, exclude_none=True) for e in entries]
                     )
@@ -203,12 +205,13 @@ async def run_bridge(config: Config):
             if config.bridge.show_intermediate:
                 await _flush_pending_tool_start(session_id)
                 await _flush_agent_chunks(
-                    session_id,
-                    feishu,
-                    session_manager,
-                    agent_text_chunks,
-                    agent_thought_chunks,
-                )
+                                    session_id,
+                                    feishu,
+                                    session_manager,
+                                    agent_text_chunks,
+                                    agent_thought_chunks,
+                                    config,
+                                )
 
     async def on_permission(session_id: str, options: list[PermissionOption], tool_call: Any = None) -> Optional[str]:
         """Handle permission requests from agents."""
@@ -254,7 +257,7 @@ async def run_bridge(config: Config):
     agent_manager.register_agents([config.agent])
 
     async def notification_flush_callback(session_id: str):
-        await _flush_agent_chunks(session_id, feishu, session_manager, agent_text_chunks, agent_thought_chunks)
+        await _flush_agent_chunks(session_id, feishu, session_manager, agent_text_chunks, agent_thought_chunks, config)
 
     # Fetch bot info before starting WebSocket
     await feishu.init()
@@ -333,6 +336,7 @@ async def _flush_agent_chunks(
     session_manager: SessionManager,
     agent_text_chunks: dict[str, str],
     agent_thought_chunks: dict[str, str],
+    config: Optional[Config] = None,
 ) -> None:
     """Flush accumulated agent streaming chunks to Feishu as messages."""
     info = session_manager.find_by_session_id(session_id)
@@ -345,9 +349,33 @@ async def _flush_agent_chunks(
     if session_id in agent_text_chunks and agent_text_chunks[session_id]:
         text = agent_text_chunks.pop(session_id)
         logger.debug("💬 [%s] %s", session_id[:8], text[:200].replace("\n", "\\n"))
-        msg_id = await feishu.send_message(session.conversation_id, root_message_id, text)
-        if msg_id:
-            session.last_bot_message_id = msg_id
+
+        # Detect markdown image references ![...](path) and send as image messages
+        import os
+        import re
+
+        img_pattern = re.compile(r'!\[([^\]]*)\]\(([^)]+)\)')
+        images = [(m.group(0), m.group(2)) for m in img_pattern.finditer(text)]
+        img_exts = ('.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp')
+        for full_match, img_path in images:
+            if os.path.isabs(img_path):
+                abs_path = img_path
+            else:
+                workspace = os.path.expanduser(config.bridge.default_workspace or "~") if config else os.getcwd()
+                abs_path = os.path.join(workspace, img_path)
+            if os.path.isfile(abs_path) and os.path.splitext(abs_path)[1].lower() in img_exts:
+                try:
+                    img_msg_id = await feishu.send_image(session.conversation_id, root_message_id, abs_path)
+                    if img_msg_id:
+                        session.last_bot_message_id = img_msg_id
+                    text = text.replace(full_match, '').strip()
+                except Exception:
+                    logger.warning("Failed to send image %s", abs_path, exc_info=True)
+
+        if text:
+            msg_id = await feishu.send_message(session.conversation_id, root_message_id, text)
+            if msg_id:
+                session.last_bot_message_id = msg_id
 
     if session_id in agent_thought_chunks and agent_thought_chunks[session_id]:
         text = agent_thought_chunks.pop(session_id)

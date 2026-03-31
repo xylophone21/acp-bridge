@@ -17,6 +17,8 @@ import lark_oapi as lark
 from lark_oapi.api.im.v1 import (
     CreateFileRequest,
     CreateFileRequestBody,
+    CreateImageRequest,
+    CreateImageRequestBody,
     CreateMessageReactionRequest,
     CreateMessageReactionRequestBody,
     CreateMessageRequest,
@@ -379,6 +381,49 @@ class FeishuConnection:
 
         if not resp.success():
             logger.error("Failed to send file message: %s %s", resp.code, resp.msg)
+            return None
+        return resp.data.message_id  # type: ignore[union-attr]
+
+    async def send_image(
+        self,
+        conversation_id: str,
+        reply_to: Optional[str],
+        image_path: str,
+    ) -> Optional[str]:
+        """Upload a local image and send it as an image message. Returns message_id."""
+        import io
+
+        with open(image_path, "rb") as f:
+            image_bytes = f.read()
+
+        # Upload image to get image_key
+        img_body = CreateImageRequestBody.builder().image_type("message").image(io.BytesIO(image_bytes)).build()
+        img_req = CreateImageRequest.builder().request_body(img_body).build()
+        img_resp = await _retry_on_rate_limit(lambda: self._client.im.v1.image.acreate(img_req))  # type: ignore[union-attr]
+        if not img_resp.success():
+            logger.error("Failed to upload image: %s %s", img_resp.code, img_resp.msg)
+            return None
+        image_key = img_resp.data.image_key  # type: ignore[union-attr]
+
+        # Send image message
+        msg_content = json.dumps({"image_key": image_key})
+        if reply_to:
+            body = ReplyMessageRequestBody.builder().msg_type("image").content(msg_content).build()
+            req = ReplyMessageRequest.builder().message_id(reply_to).request_body(body).build()
+            resp = await _retry_on_rate_limit(lambda: self._client.im.v1.message.areply(req))  # type: ignore[union-attr]
+        else:
+            body = (
+                CreateMessageRequestBody.builder()
+                .msg_type("image")
+                .receive_id(conversation_id)
+                .content(msg_content)
+                .build()
+            )
+            req = CreateMessageRequest.builder().receive_id_type("chat_id").request_body(body).build()
+            resp = await _retry_on_rate_limit(lambda: self._client.im.v1.message.acreate(req))  # type: ignore[union-attr]
+
+        if not resp.success():
+            logger.error("Failed to send image message: %s %s", resp.code, resp.msg)
             return None
         return resp.data.message_id  # type: ignore[union-attr]
 

@@ -10,6 +10,7 @@ dependencies = [
     "keyring>=25.7.0",
     "keyrings-alt>=5.0.2",
     "lark-oapi>=1.5.3",
+    "matplotlib>=3.10.8",
     "pyyaml>=6.0.3",
     "toml>=0.10.2",
 ]
