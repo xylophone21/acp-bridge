@@ -32,6 +32,8 @@ Core features:
    - `contact:contact.base:readonly` — get user name (optional, for identifying sender in prompts)
    - `contact:user.email:readonly` — get user email (optional, for matching accounts in external systems)
 
+   For contact permissions to work, ensure the **Data Permission** (数据权限) contact scope includes all bot users.
+
 ### Steps
 
 1. Install dependencies:
