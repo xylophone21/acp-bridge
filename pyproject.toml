@@ -52,3 +52,10 @@ select = ["E", "F", "W", "I"]
 [tool.pyright]
 pythonVersion = "3.11"
 include = ["agent_bridge"]
+
+[tool.semantic_release]
+version_toml = ["pyproject.toml:project.version"]
+branch = "main"
+changelog_file = "CHANGELOG.md"
+commit_message = "chore(release): v{version}"
+tag_format = "v{version}"
