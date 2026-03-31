@@ -1,6 +1,29 @@
 # CHANGELOG
 
 
+## v1.1.0 (2026-03-31)
+
+### Documentation
+
+- Add data permission scope note for contact API
+  ([`641b722`](https://github.com/xylophone21/acp-bridge/commit/641b72225ff57afd3d2edc7bc436fa4a1906613b))
+
+### Features
+
+- Add --log-dir for built-in daily log rotation
+  ([`c0ba3af`](https://github.com/xylophone21/acp-bridge/commit/c0ba3af2fecaf7329a8a2e46329898b1c5b83a27))
+
+- Auto-detect markdown image refs and send as Feishu image messages
+  ([`a55f75d`](https://github.com/xylophone21/acp-bridge/commit/a55f75dbdf2629d57d4226785e3e1f2145895678))
+
+- Add send_image method to FeishuConnection (upload via im.v1.image.create) - Detect ![alt](path) in
+  agent text, upload and send as image message - Resolve relative paths using
+  config.bridge.default_workspace - Add matplotlib dependency for chart generation
+
+- Resolve sender identity from Feishu and inject into prompt
+  ([`f4ca481`](https://github.com/xylophone21/acp-bridge/commit/f4ca481c289313b6536631be13f52c95ef25fd3a))
+
+
 ## v1.0.0 (2026-03-31)
 
 ### Continuous Integration
