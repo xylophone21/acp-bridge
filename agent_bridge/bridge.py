@@ -159,7 +159,11 @@ async def run_bridge(config: Config):
             if update.status in ("completed", "failed"):
                 icon = "✅" if update.status == "completed" else "❌"
                 if update.raw_output:
-                    out = json.dumps(update.raw_output, ensure_ascii=False) if not isinstance(update.raw_output, str) else update.raw_output
+                    out = (
+                        json.dumps(update.raw_output, ensure_ascii=False)
+                        if not isinstance(update.raw_output, str)
+                        else update.raw_output
+                    )
                     logger.debug("%s [%s] %s | output: %s", icon, session_id[:8], update.title, out[:500])
                 else:
                     logger.debug("%s [%s] %s", icon, session_id[:8], update.title)
@@ -229,7 +233,11 @@ async def run_bridge(config: Config):
             if title:
                 parts.append(f"\n🔧 {title}")
             if raw_input:
-                detail = json.dumps(raw_input, indent=2, ensure_ascii=False) if not isinstance(raw_input, str) else raw_input
+                detail = (
+                    json.dumps(raw_input, indent=2, ensure_ascii=False)
+                    if not isinstance(raw_input, str)
+                    else raw_input
+                )
                 if len(detail) > 500:
                     detail = detail[:500] + "\n... (truncated)"
                 fence = safe_backticks(detail)

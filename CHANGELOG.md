@@ -11,6 +11,10 @@
 
 - Fix e2e test permission callback missing `tool_call` parameter
 
+### Added
+
+- CI workflow (test + lint) on push/PR to main
+
 ## [0.2.0] - 2026-03-31
 
 ### Fixed
