@@ -1,36 +1,110 @@
-# Changelog
+# CHANGELOG
 
-## [0.3.0] - 2026-03-31
 
-### Changed
+## v1.0.0 (2026-03-31)
 
-- Rename package from `src` to `agent_bridge` (flat layout) for PyPI publishing
-- Add hatchling build-system config
+### Continuous Integration
 
-### Fixed
+- Add semantic-release with manual trigger and PyPI publish
+  ([`b75cb91`](https://github.com/xylophone21/acp-bridge/commit/b75cb91200fe08790e13678d6c7845b01a277cf7))
 
-- Fix e2e test permission callback missing `tool_call` parameter
-
-### Added
-
-- CI workflow (test + lint) on push/PR to main
-
-## [0.2.0] - 2026-03-31
-
-### Fixed
-
-- Fix agent stdio buffer limit too small (64KB default) causing `LimitOverrunError` on large responses, increased to 50MB
-
-## [0.1.0] - 2026-03-30
-
-Initial release with core Feishu-to-ACP agent bridging.
+- Add test and lint workflow
+  ([`b0f1481`](https://github.com/xylophone21/acp-bridge/commit/b0f148129610dd481e43884150d788cb8936d286))
 
 ### Features
 
-- ACP-based agent process management (spawn, communication, lifecycle)
-- Feishu message event handling and reply
-- Automatic session management with LRU/TTL eviction
-- Tool call buffering and intermediate output formatting
-- Show tool call details in permission request messages
-- Credential management via keyring
-- Zombie process detection and session cleanup
+- Rename package from src to agent_bridge for PyPI publishing
+  ([`fa00198`](https://github.com/xylophone21/acp-bridge/commit/fa001983280b848cc39faaa220e8875dce511505))
+
+- Restructure to flat layout (src/*.py -> agent_bridge/*.py) - Add build-system config (hatchling)
+  to pyproject.toml - Fix stdio buffer limit (64KB -> 50MB) preventing LimitOverrunError - Fix e2e
+  test permission callback missing tool_call parameter - Add CHANGELOG.md - Update all imports,
+  docs, and test commands
+
+BREAKING CHANGE: package renamed from src to agent_bridge. Run command changed from 'python -m
+  src.main' to 'python -m agent_bridge.main'.
+
+- Rename package to acp-bridge and unify import name to acp_bridge
+  ([`df9ed6f`](https://github.com/xylophone21/acp-bridge/commit/df9ed6f3961956afcce2d3502d4069ce9dd1d4ae))
+
+
+## v0.2.0 (2026-03-31)
+
+### Features
+
+- **agent**: Increase agent process transport buffer limit to 50MB
+  ([`3911b20`](https://github.com/xylophone21/acp-bridge/commit/3911b206e8778335f16ffa82926396f480683529))
+
+
+## v0.1.0 (2026-03-30)
+
+### Bug Fixes
+
+- **agent**: Add resilience to agent process failures and session cleanup
+  ([`7ade9c6`](https://github.com/xylophone21/acp-bridge/commit/7ade9c6e6bf4fb14ee12994c681e30d64028027a))
+
+- **agent**: 修复自实现的acp协议不工作的问题,替换为开源版本
+  ([`67edbcc`](https://github.com/xylophone21/acp-bridge/commit/67edbcc35b66643f861aaa176e205868d1e6cc0b))
+
+- Add ruff linter configuration with E, F, W, I rule sets
+
+- **agent,bridge**: Improve session lifecycle and zombie process detection
+  ([`47a08e2`](https://github.com/xylophone21/acp-bridge/commit/47a08e26dac44e5c01a72489d996c90c9beee1b7))
+
+- **bridge**: Improve debug logging with emoji indicators and concise formatting
+  ([`4d9f8ac`](https://github.com/xylophone21/acp-bridge/commit/4d9f8aca3afd8d56c82272df268b514f42e45935))
+
+- **handler**: Improve error handling and reaction logic in session end
+  ([`2c2e5c4`](https://github.com/xylophone21/acp-bridge/commit/2c2e5c4b3aaa2bffc360c800cd8d95d1e6c881f1))
+
+- **handler**: Remove duplicate reaction on bot message at session end
+  ([`b1938aa`](https://github.com/xylophone21/acp-bridge/commit/b1938aaecce726d0c23985463a6686a44972b820))
+
+- **logging**: Add debug logging for session flush and prompt operations
+  ([`cb8ac66`](https://github.com/xylophone21/acp-bridge/commit/cb8ac6644b029274cb7a94eb201b28e25b05faa4))
+
+- **logging**: Adjust log levels and improve event tracing for better observability
+  ([`4e8cbba`](https://github.com/xylophone21/acp-bridge/commit/4e8cbbadf3438a1819d1d23ba3b1d89bce6c185b))
+
+### Chores
+
+- **dev**: Add type checking and improve test configuration
+  ([`62a1f74`](https://github.com/xylophone21/acp-bridge/commit/62a1f74bb8914e56cd8187b42e949be2f391955b))
+
+### Documentation
+
+- Update README with improved project description
+  ([`bf505ce`](https://github.com/xylophone21/acp-bridge/commit/bf505ce0fd85e02ec9d1a600b8018f88eb8f9744))
+
+- **testing**: Add comprehensive testing guide for AgentBridge
+  ([`117e46b`](https://github.com/xylophone21/acp-bridge/commit/117e46b79f87b4aa7a6a48ad99f9296d638b7420))
+
+### Features
+
+- Show tool details in permission request messages
+  ([`2aa8747`](https://github.com/xylophone21/acp-bridge/commit/2aa87477f847c6f868fd788fa792c38f86fcb4ca))
+
+- Show tool title and raw_input in Feishu permission prompts - Pass tool_call from ACP permission
+  callback to on_permission handler - Also: spawn agent process with cwd=workspace, log session mode
+  on creation
+
+- **bridge**: Add credential management and improve debug logging
+  ([`e4b4cf1`](https://github.com/xylophone21/acp-bridge/commit/e4b4cf1e52cfb31f8cc461ac4411a76df0b1c02b))
+
+- Add keyring ,keyrings-alt and pyyaml dependencies for secure credential storage
+
+- **bridge**: Add tool call buffering and improved intermediate output formatting
+  ([`8f07b7a`](https://github.com/xylophone21/acp-bridge/commit/8f07b7ad0e7c670a9cd68c2f900479183fe3f3c0))
+
+- **project**: Initialize Python project structure with agent bridge implementation(AI code, not
+  reviewed yet)
+  ([`c4fa5a9`](https://github.com/xylophone21/acp-bridge/commit/c4fa5a95663e268b6b01d3a72a143ef4d9d66972))
+
+- **session-refactor**: Implement automatic session management with LRU/TTL eviction ( reviewed but
+  not tested)
+  ([`6173a12`](https://github.com/xylophone21/acp-bridge/commit/6173a1241c3681fd616101cca729e9eaa17dd5fb))
+
+### Testing
+
+- **e2e**: Add end-to-end tests for agent bridge with Feishu mocking
+  ([`2619d4f`](https://github.com/xylophone21/acp-bridge/commit/2619d4f4e055c8cc5556bae5d6f99c45b1825293))
