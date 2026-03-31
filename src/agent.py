@@ -175,7 +175,10 @@ class AgentManager:
         stack = AsyncExitStack()
         try:
             conn, process = await stack.enter_async_context(
-                acp.spawn_agent_process(client, config.command, *config.args, env=env, cwd=workspace)
+                acp.spawn_agent_process(
+                    client, config.command, *config.args, env=env, cwd=workspace,
+                    transport_kwargs={"limit": 50 * 1024 * 1024},
+                )
             )
             logger.debug("Agent process spawned (pid=%s)", process.pid)
 

@@ -1,6 +1,6 @@
 [project]
 name = "agent-bridge"
-version = "0.1.0"
+version = "0.2.0"
 description = "Bridge Feishu to ACP-compatible agents with automatic session management for non-developers."
 readme = "README.md"
 requires-python = ">=3.11"
