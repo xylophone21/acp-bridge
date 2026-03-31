@@ -41,7 +41,7 @@ Core features:
 2. Generate a config file:
 
    ```bash
-   uv run python -m src.main init
+   uv run python -m agent_bridge.main init
    ```
 
 3. Edit `bridge.toml` with your Feishu app credentials:
@@ -70,12 +70,12 @@ Core features:
 4. Start the service:
 
    ```bash
-   uv run python -m src.main run
+   uv run python -m agent_bridge.main run
    ```
 
 > **Tip**: It's recommended to run in tmux so it persists in the background:
 > ```bash
-> tmux new -s agent-bridge "uv run python -m src.main run"
+> tmux new -s agent-bridge "uv run python -m agent_bridge.main run"
 > ```
 
 ## Commands

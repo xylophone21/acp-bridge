@@ -3,7 +3,7 @@
 import pytest
 from acp.schema import PermissionOption
 
-from src.handler_permission import handle_permission_response
+from agent_bridge.handler_permission import handle_permission_response
 
 
 class FakeFeishu:

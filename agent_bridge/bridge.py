@@ -20,12 +20,12 @@ from acp.schema import (
     ToolCallStart,
 )
 
-from src.agent import AgentManager
-from src.config import Config
-from src.feishu import FeishuConnection, FeishuEvent
-from src.handler import handle_event
-from src.session import SessionManager
-from src.utils import safe_backticks
+from agent_bridge.agent import AgentManager
+from agent_bridge.config import Config
+from agent_bridge.feishu import FeishuConnection, FeishuEvent
+from agent_bridge.handler import handle_event
+from agent_bridge.session import SessionManager
+from agent_bridge.utils import safe_backticks
 
 logger = logging.getLogger(__name__)
 

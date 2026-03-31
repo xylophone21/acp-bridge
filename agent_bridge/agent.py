@@ -29,7 +29,7 @@ from acp.schema import (
     UserMessageChunk,
 )
 
-from src.config import AgentConfig
+from agent_bridge.config import AgentConfig
 
 logger = logging.getLogger(__name__)
 

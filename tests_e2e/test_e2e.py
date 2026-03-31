@@ -15,11 +15,11 @@ from typing import Optional
 
 import pytest
 
-from src.agent import AgentManager
-from src.config import AgentConfig, BridgeConfig, Config, FeishuConfig
-from src.feishu import FeishuEvent
-from src.handler import handle_event
-from src.session import SessionManager
+from agent_bridge.agent import AgentManager
+from agent_bridge.config import AgentConfig, BridgeConfig, Config, FeishuConfig
+from agent_bridge.feishu import FeishuEvent
+from agent_bridge.handler import handle_event
+from agent_bridge.session import SessionManager
 
 logging.basicConfig(level=logging.DEBUG, format="[%(levelname)s] [%(name)s]: %(message)s")
 logger = logging.getLogger(__name__)
@@ -191,7 +191,7 @@ class _Harness:
         # None = auto-approve first option, "deny" = deny, callable = custom
         self.permission_response: Optional[str] = None
 
-        async def on_permission(session_id: str, options: list) -> Optional[str]:
+        async def on_permission(session_id: str, options: list, tool_call: Any = None) -> Optional[str]:
             self.last_permission_options = options
             if self.permission_response == "deny":
                 return None

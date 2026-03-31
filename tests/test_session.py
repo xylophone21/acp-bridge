@@ -7,8 +7,8 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from src.config import AgentConfig, BridgeConfig, Config, FeishuConfig
-from src.session import SessionManager, SessionState
+from agent_bridge.config import AgentConfig, BridgeConfig, Config, FeishuConfig
+from agent_bridge.session import SessionManager, SessionState
 
 # ---------------------------------------------------------------------------
 # Fixtures

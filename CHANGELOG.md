@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.3.0] - 2026-03-31
+
+### Changed
+
+- Rename package from `src` to `agent_bridge` (flat layout) for PyPI publishing
+- Add hatchling build-system config
+
+### Fixed
+
+- Fix e2e test permission callback missing `tool_call` parameter
+
 ## [0.2.0] - 2026-03-31
 
 ### Fixed

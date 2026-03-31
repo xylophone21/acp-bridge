@@ -13,7 +13,7 @@ uv run pytest tests_e2e/
 uv run python -m scripts.test_feishu_integration
 
 # Lint + type check
-uv run ruff check src/ tests/ && uv run pyright src/
+uv run ruff check agent_bridge/ tests/ && uv run pyright agent_bridge/
 ```
 
 ## Smoke Tests (manual, verify in Feishu after each release)

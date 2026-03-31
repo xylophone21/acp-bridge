@@ -5,7 +5,7 @@ from typing import Optional
 
 from acp.schema import PermissionOption
 
-from src.feishu import FeishuConnection
+from agent_bridge.feishu import FeishuConnection
 
 logger = logging.getLogger(__name__)
 

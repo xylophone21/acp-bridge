@@ -5,8 +5,8 @@ import asyncio
 import logging
 import sys
 
-from src.bridge import run_bridge
-from src.config import Config
+from agent_bridge.bridge import run_bridge
+from agent_bridge.config import Config
 
 
 def main():

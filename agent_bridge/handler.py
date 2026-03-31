@@ -3,13 +3,13 @@
 import logging
 from typing import Callable, Coroutine
 
-from src.agent import AgentManager
-from src.config import Config
-from src.feishu import FeishuConnection, FeishuEvent
-from src.handler_command import handle_command
-from src.handler_message import handle_message
-from src.handler_permission import handle_permission_response
-from src.session import SessionManager
+from agent_bridge.agent import AgentManager
+from agent_bridge.config import Config
+from agent_bridge.feishu import FeishuConnection, FeishuEvent
+from agent_bridge.handler_command import handle_command
+from agent_bridge.handler_message import handle_message
+from agent_bridge.handler_permission import handle_permission_response
+from agent_bridge.session import SessionManager
 
 logger = logging.getLogger(__name__)
 

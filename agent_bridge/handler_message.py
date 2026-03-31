@@ -4,11 +4,11 @@ import asyncio
 import logging
 from typing import Callable, Coroutine, Optional
 
-from src.agent import AgentManager
-from src.config import Config
-from src.feishu import FeishuConnection, FeishuEvent
-from src.session import SessionManager
-from src.utils import expand_path
+from agent_bridge.agent import AgentManager
+from agent_bridge.config import Config
+from agent_bridge.feishu import FeishuConnection, FeishuEvent
+from agent_bridge.session import SessionManager
+from agent_bridge.utils import expand_path
 
 logger = logging.getLogger(__name__)
 

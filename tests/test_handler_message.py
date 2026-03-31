@@ -6,9 +6,9 @@ from typing import Optional
 
 import pytest
 
-from src.feishu import FeishuEvent
-from src.handler_message import _init_locks, handle_message
-from src.session import SessionState
+from agent_bridge.feishu import FeishuEvent
+from agent_bridge.handler_message import _init_locks, handle_message
+from agent_bridge.session import SessionState
 
 # --- Fakes ---
 

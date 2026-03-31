@@ -6,8 +6,8 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from src.bridge import _flush_agent_chunks, _format_plan, _handle_evicted_sessions, _send_tool_msg
-from src.session import SessionState
+from agent_bridge.bridge import _flush_agent_chunks, _format_plan, _handle_evicted_sessions, _send_tool_msg
+from agent_bridge.session import SessionState
 
 
 class TestFormatPlan:

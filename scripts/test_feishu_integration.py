@@ -12,14 +12,15 @@ Usage:
 
 import asyncio
 import functools
+import os
 
-from src.config import Config
-from src.feishu import FeishuConnection, FeishuEvent
+from agent_bridge.config import Config
+from agent_bridge.feishu import FeishuConnection, FeishuEvent
 
 # Force unbuffered output
 print = functools.partial(print, flush=True)
 
-CONFIG_PATH = "bridge.toml"
+CONFIG_PATH = os.environ.get("BRIDGE_CONFIG", "bridge.toml")
 
 
 def _print_event(event: FeishuEvent):

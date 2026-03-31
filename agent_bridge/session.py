@@ -6,7 +6,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Optional
 
-from src.config import Config
+from agent_bridge.config import Config
 
 logger = logging.getLogger(__name__)
 
