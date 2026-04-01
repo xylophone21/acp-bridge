@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import os
+import signal
 from collections import defaultdict
 from typing import Any, Optional
 
@@ -282,10 +283,24 @@ async def run_bridge(config: Config):
 
     logger.info("Bridge started, waiting for events...")
 
+    # Graceful shutdown on SIGTERM / SIGINT; second signal force-exits.
+    shutdown_event = asyncio.Event()
+
+    def _request_shutdown():
+        shutdown_event.set()
+
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        loop.add_signal_handler(sig, _request_shutdown)
+
     # Main event loop
     try:
-        while True:
-            event = await event_queue.get()
+        while not shutdown_event.is_set():
+            try:
+                event = await asyncio.wait_for(event_queue.get(), timeout=1.0)
+            except asyncio.TimeoutError:
+                continue
+
             logger.info(
                 "[%s] Received: %s (root=%s, sender=%s)",
                 event.message_id,
@@ -310,23 +325,17 @@ async def run_bridge(config: Config):
                     logger.exception("Unhandled error in handle_event")
 
             asyncio.create_task(_safe_handle(event))
-    except asyncio.CancelledError:
-        ttl_task.cancel()
+    finally:
         logger.info("Bridge shutting down...")
+        ttl_task.cancel()
         for sid in list(agent_manager._agents):
             try:
-                await agent_manager.end_session(sid)
+                await asyncio.wait_for(agent_manager.end_session(sid), timeout=5)
             except Exception:
                 pass
-        os._exit(0)
-    except KeyboardInterrupt:
-        ttl_task.cancel()
-        logger.info("Bridge shutting down...")
-        for sid in list(agent_manager._agents):
-            try:
-                await agent_manager.end_session(sid)
-            except Exception:
-                pass
+        logger.info("All agents terminated")
+        # feishu.connect() blocks a thread forever with no stop API;
+        # os._exit is the only way to terminate without hanging.
         os._exit(0)
 
 
