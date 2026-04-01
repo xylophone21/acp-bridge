@@ -176,7 +176,7 @@ async def main():
     if event.files:
         f = event.files[0]
         print(f"  Downloading: {f.file_name}")
-        data = await conn.download_file(event.message_id, f.file_key)
+        data = await conn._download_file(event.message_id, f.file_key)
         assert data is not None, "download_file failed"
         print(f"  Downloaded {len(data)} bytes")
         print("✅ Verified")
@@ -276,7 +276,7 @@ async def main():
     if event.files:
         f = event.files[0]
         print(f"  Downloading: {f.file_name}")
-        data = await conn.download_file(event.message_id, f.file_key)
+        data = await conn._download_file(event.message_id, f.file_key)
         assert data is not None, "download_file failed"
         print(f"  Downloaded {len(data)} bytes")
         print("✅ Verified")

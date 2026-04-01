@@ -206,9 +206,15 @@ def _start_prompt(
             logger.debug("Could not resolve user info for sender %s", event.sender_id)
         prompt_text = f"[Current user: {identity}]\n{text}"
 
+        # Download attachments (images/files) and resolve placeholders
+        if event.files or event.parent_id:
+            workspace = expand_path(config.bridge.default_workspace)
+            resolved = await feishu.resolve_attachments(event, workspace, config.bridge.attachment_dir)
+            prompt_text = f"[Current user: {identity}]\n{resolved}"
+
         content = [{"type": "text", "text": prompt_text}]
         try:
-            logger.debug("[%s] Sending prompt to agent: %.100s", reply_id, prompt_text)
+            logger.debug("[%s] Sending prompt to agent: %.500s", reply_id, prompt_text)
             result = await agent_manager.prompt(session.session_id, content)
             logger.debug("Prompt completed: stop_reason=%s", result.get("stopReason"))
             if notification_flush_callback:

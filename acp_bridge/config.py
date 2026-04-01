@@ -16,6 +16,7 @@ class FeishuConfig:
 @dataclass
 class BridgeConfig:
     default_workspace: str = "~"
+    attachment_dir: str = "tmp/attachments"
     auto_approve: bool = False
     allowed_users: list[str] = field(default_factory=list)
     max_sessions: int = 10
@@ -68,6 +69,7 @@ app_secret = "your_app_secret"
 
 [bridge]
 default_workspace = "~"
+attachment_dir = "tmp/attachments"
 auto_approve = false
 allowed_users = []
 max_sessions = 10

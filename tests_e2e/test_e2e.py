@@ -60,6 +60,9 @@ class FakeFeishu:
     async def get_user_info(self, open_id: str) -> tuple:
         return "Test User", "testuser@example.com"
 
+    async def resolve_attachments(self, event, workspace: str, attachment_dir: str) -> str:
+        return event.text
+
     def last_reply(self) -> str:
         assert self.messages, "No messages sent"
         return self.messages[-1]["text"]
@@ -102,16 +105,19 @@ def _make_event(
     root_id: Optional[str] = None,
     chat_type: str = "group",
     is_mention_bot: bool = True,
+    parent_id: Optional[str] = None,
+    files: Optional[list] = None,
 ) -> FeishuEvent:
     return FeishuEvent(
         conversation_id="chat_1",
         message_id=msg_id,
-        parent_id=None,
+        parent_id=parent_id,
         text=text,
         root_id=root_id or msg_id,
         is_mention_bot=is_mention_bot,
         sender_id="user_1",
         chat_type=chat_type,
+        files=files or [],
     )
 
 
@@ -659,3 +665,51 @@ class TestErrorHandling:
         await harness.send(_make_event("#sessions", msg_id="z2"), wait_reply=False)
         await asyncio.sleep(0.5)
         assert "zombie" in feishu.last_reply().lower()
+
+
+# ─── 5. Attachments ──────────────────────────────────────────────────────
+
+
+class TestAttachments:
+    @pytest.mark.asyncio
+    async def test_5_1_image_message(self, harness: _Harness, feishu: FakeFeishu):
+        """Image message (with placeholder) gets a reply."""
+        from acp_bridge.feishu import FeishuFile
+
+        event = _make_event(
+            text="{{attachment:img_test_key}}",
+            msg_id="img1",
+            chat_type="p2p",
+            is_mention_bot=False,
+            files=[FeishuFile(file_key="img_test_key", file_name="img_test_key.png", file_type="image")],
+        )
+        await harness.send(event)
+        assert feishu.reply_count() >= 1
+
+    @pytest.mark.asyncio
+    async def test_5_2_file_message(self, harness: _Harness, feishu: FakeFeishu):
+        """File message (with placeholder) gets a reply."""
+        from acp_bridge.feishu import FeishuFile
+
+        event = _make_event(
+            text="{{attachment:fk_test}}",
+            msg_id="file1",
+            chat_type="p2p",
+            is_mention_bot=False,
+            files=[FeishuFile(file_key="fk_test", file_name="fk_test_report.pdf", file_type="file")],
+        )
+        await harness.send(event)
+        assert feishu.reply_count() >= 1
+
+    @pytest.mark.asyncio
+    async def test_5_3_text_with_parent_id(self, harness: _Harness, feishu: FakeFeishu):
+        """Message quoting a parent (parent_id set) gets a reply."""
+        event = _make_event(
+            text="帮我看看这个",
+            msg_id="quote1",
+            parent_id="om_parent_file",
+            chat_type="p2p",
+            is_mention_bot=False,
+        )
+        await harness.send(event)
+        assert feishu.reply_count() >= 1

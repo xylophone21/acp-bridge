@@ -11,6 +11,7 @@ dependencies = [
     "keyrings-alt>=5.0.2",
     "lark-oapi>=1.5.3",
     "matplotlib>=3.10.8",
+    "openpyxl>=3.1.5",
     "pyyaml>=6.0.3",
     "toml>=0.10.2",
 ]

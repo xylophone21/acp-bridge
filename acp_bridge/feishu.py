@@ -24,6 +24,7 @@ from lark_oapi.api.im.v1 import (
     CreateMessageRequest,
     CreateMessageRequestBody,
     DeleteMessageReactionRequest,
+    GetMessageRequest,
     GetMessageResourceRequest,
     ReplyMessageRequest,
     ReplyMessageRequestBody,
@@ -82,6 +83,55 @@ class FeishuEvent:
     def __post_init__(self):
         if not self.clean_text:
             self.clean_text = self.text
+
+
+def _parse_content(msg_type: str, content_str: str) -> tuple[str, list[FeishuFile]]:
+    """Parse message content JSON into (text, files) based on msg_type."""
+    text = ""
+    files: list[FeishuFile] = []
+    try:
+        content = json.loads(content_str)
+    except (json.JSONDecodeError, TypeError):
+        return text, files
+
+    if msg_type == "text":
+        text = content.get("text", "")
+    elif msg_type == "image":
+        ik = content.get("image_key", "")
+        if ik:
+            files.append(FeishuFile(file_key=ik, file_name=f"{ik}.png", file_type="image"))
+            text = f"{{{{attachment:{ik}}}}}"
+    elif msg_type == "file":
+        fk = content.get("file_key", "")
+        fn = content.get("file_name", "file")
+        if fk:
+            files.append(FeishuFile(file_key=fk, file_name=f"{fk}_{fn}", file_type="file"))
+            text = f"{{{{attachment:{fk}}}}}"
+    elif msg_type == "post":
+        parts = []
+        for paragraph in content.get("content", []):
+            for elem in paragraph:
+                tag = elem.get("tag", "")
+                if tag == "text":
+                    parts.append(elem.get("text", ""))
+                elif tag == "a":
+                    parts.append(elem.get("text", "") or elem.get("href", ""))
+                elif tag == "img":
+                    ik = elem.get("image_key", "")
+                    if ik:
+                        files.append(FeishuFile(file_key=ik, file_name=f"{ik}.png", file_type="image"))
+                        parts.append(f"{{{{attachment:{ik}}}}}")
+                elif tag == "media":
+                    fk = elem.get("file_key", "")
+                    fn = elem.get("file_name", "media")
+                    if fk:
+                        files.append(FeishuFile(file_key=fk, file_name=f"{fk}_{fn}", file_type="file"))
+                        parts.append(f"{{{{attachment:{fk}}}}}")
+            parts.append("\n")
+        title = content.get("title", "")
+        text = (title + "\n" if title else "") + "".join(parts).strip()
+
+    return text, files
 
 
 @dataclass
@@ -236,14 +286,9 @@ class FeishuConnection:
         # parent_id (defensive), then message_id (top-level message).
         root_id = msg.root_id or msg.parent_id or message_id
 
-        # Extract text from content JSON
-        text = ""
-        if msg.content:
-            try:
-                content = json.loads(msg.content)
-                text = content.get("text", "")
-            except (json.JSONDecodeError, TypeError):
-                pass
+        # Extract text and files from content JSON
+        msg_type = msg.message_type if isinstance(msg.message_type, str) else "text"
+        text, files = _parse_content(msg_type, msg.content or "")
 
         # Strip bot @mention from text
         if msg.mentions and self._bot_open_id:
@@ -282,6 +327,7 @@ class FeishuConnection:
             parent_id=parent_id,
             text=text,
             clean_text=clean_text,
+            files=files,
             root_id=root_id,
             is_mention_bot=is_mention_bot,
             sender_id=sender_id,
@@ -321,9 +367,81 @@ class FeishuConnection:
 
         return resp.data.message_id  # type: ignore[union-attr]
 
-    async def download_file(self, message_id: str, file_key: str) -> Optional[bytes]:
-        """Download a file from Feishu."""
-        req = GetMessageResourceRequest.builder().message_id(message_id).file_key(file_key).type("file").build()
+    async def resolve_attachments(self, event: FeishuEvent, workspace: str, attachment_dir: str) -> str:
+        """Download all attachments (inline + quoted parent) and return resolved text.
+
+        Args:
+            workspace: Absolute workspace root path.
+            attachment_dir: Relative path under workspace for saving/referencing files.
+        """
+        import os
+        text = event.text
+        abs_dir = os.path.join(workspace, attachment_dir)
+
+        if event.files or event.parent_id:
+            os.makedirs(abs_dir, exist_ok=True)
+
+        # Resolve inline attachment placeholders
+        for f in event.files:
+            placeholder = f"{{{{attachment:{f.file_key}}}}}"
+            path = await self._save_file(event.message_id, f, abs_dir)
+            if path:
+                ref = os.path.join(attachment_dir, f.file_name)
+                text = text.replace(placeholder, f"\n[Attached {f.file_type}: {ref}]\n")
+            else:
+                text = text.replace(placeholder, "")
+
+        # Fetch and download attachments from quoted parent message
+        if event.parent_id:
+            parent_files = await self._get_parent_files(event.parent_id)
+            for f in parent_files:
+                path = await self._save_file(event.parent_id, f, abs_dir)
+                if path:
+                    ref = os.path.join(attachment_dir, f.file_name)
+                    text += f"\n[Attached {f.file_type} from quoted message: {ref}]\n"
+
+        return text
+
+    async def _save_file(self, message_id: str, f: FeishuFile, dest_dir: str) -> Optional[str]:
+        """Download a single file and save to dest_dir. Skips if already exists. Returns path or None."""
+        import os
+        path = os.path.join(dest_dir, f.file_name)
+        if os.path.exists(path):
+            logger.debug("Already exists, skipping download: %s", path)
+            return path
+        try:
+            data = await self._download_file(
+                message_id, f.file_key,
+                resource_type="image" if f.file_type == "image" else "file",
+            )
+            if data:
+                with open(path, "wb") as fh:
+                    fh.write(data)
+                logger.debug("Downloaded %s -> %s", f.file_key, path)
+                return path
+        except Exception:
+            logger.warning("Failed to download %s %s", f.file_type, f.file_key, exc_info=True)
+        return None
+
+    async def _get_parent_files(self, parent_id: str) -> list[FeishuFile]:
+        """Fetch a message by ID and extract any file/image attachments."""
+        req = GetMessageRequest.builder().message_id(parent_id).build()
+        resp = await _retry_on_rate_limit(lambda: self._client.im.v1.message.aget(req))  # type: ignore[union-attr]
+        if not resp.success() or not resp.data or not resp.data.items:
+            return []
+        msg = resp.data.items[0]
+        msg_type = msg.msg_type or ""
+        content_str = msg.body.content if msg.body else ""
+        _, files = _parse_content(msg_type, content_str or "")
+        return files
+
+    async def _download_file(self, message_id: str, file_key: str, resource_type: str = "file") -> Optional[bytes]:
+        """Download a file or image from Feishu.
+
+        Args:
+            resource_type: "file" for file attachments, "image" for images.
+        """
+        req = GetMessageResourceRequest.builder().message_id(message_id).file_key(file_key).type(resource_type).build()
         resp = await _retry_on_rate_limit(lambda: self._client.im.v1.message_resource.aget(req))  # type: ignore[union-attr]
         if not resp.success():
             logger.error("Failed to download file: %s %s", resp.code, resp.msg)
