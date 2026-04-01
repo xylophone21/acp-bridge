@@ -15,6 +15,7 @@ Core features:
 
 - Python 3.11+
 - [uv](https://docs.astral.sh/uv/) package manager
+- [Kiro CLI](https://kiro.dev/cli/) — the default ACP agent
 
 ## Feishu App Setup
 
@@ -57,6 +58,7 @@ Core features:
 
    [bridge]
    default_workspace = "~"
+   attachment_dir = "tmp/attachments"
    auto_approve = false
    max_sessions = 10
    session_ttl_minutes = 60
