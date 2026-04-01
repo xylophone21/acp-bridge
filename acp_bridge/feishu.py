@@ -77,6 +77,7 @@ class FeishuEvent:
     files: list[FeishuFile] = field(default_factory=list)
     root_id: str = ""
     is_mention_bot: bool = False
+    has_other_mentions: bool = False
     sender_id: str = ""
     chat_type: str = ""
 
@@ -309,11 +310,13 @@ class FeishuConnection:
 
         # Determine if bot was @mentioned
         is_mention_bot = False
+        has_other_mentions = False
         if msg.mentions and self._bot_open_id:
             for mention in msg.mentions:
                 if mention.id and mention.id.open_id == self._bot_open_id:
                     is_mention_bot = True
-                    break
+                else:
+                    has_other_mentions = True
 
         # Extract sender ID
         sender_id = ""
@@ -330,6 +333,7 @@ class FeishuConnection:
             files=files,
             root_id=root_id,
             is_mention_bot=is_mention_bot,
+            has_other_mentions=has_other_mentions,
             sender_id=sender_id,
             chat_type=msg.chat_type or "",
         )

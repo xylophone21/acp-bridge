@@ -42,6 +42,11 @@ async def handle_event(
     is_command = event.clean_text.startswith("#")
 
     if session is not None:
+        # In reply chain: ignore if @others but not @bot (talking to someone else)
+        if not event.is_mention_bot and event.has_other_mentions and event.chat_type != "p2p":
+            logger.info("[%s] Ignored: mentioning others in reply chain", msg_id)
+            return
+
         if is_command:
             logger.info("[%s] Command: %s", msg_id, event.clean_text[:30])
             await handle_command(event, feishu, config, agent_manager, session_manager)
