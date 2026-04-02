@@ -1,6 +1,32 @@
 # CHANGELOG
 
 
+## v1.2.0 (2026-04-02)
+
+### Bug Fixes
+
+- Graceful shutdown via signal handlers
+  ([`2b91deb`](https://github.com/xylophone21/acp-bridge/commit/2b91deb2df2bdd34b56aedb17eac981697e9f60e))
+
+- Register SIGTERM/SIGINT handlers with asyncio event loop - Replace unreliable except
+  CancelledError/KeyboardInterrupt with cooperative shutdown via asyncio.Event - Unify duplicate
+  shutdown paths into single finally block - Add 5s timeout per agent end_session to prevent hanging
+  - Keep os._exit(0) as feishu SDK ws_client.start() blocks a thread forever with no stop API
+
+### Documentation
+
+- Add kiro-cli prerequisite and attachment_dir to README
+  ([`c1f9a7b`](https://github.com/xylophone21/acp-bridge/commit/c1f9a7be37302c5fd6e163be42dc0d39259fb756))
+
+### Features
+
+- Ignore messages that @others but not @bot in reply chain
+  ([`5d53bde`](https://github.com/xylophone21/acp-bridge/commit/5d53bde663d0f7f8eb47a8c7b2bb03f63a873b7d))
+
+- Support image, file, and rich-text attachments with quoted parent message
+  ([`3cc6fda`](https://github.com/xylophone21/acp-bridge/commit/3cc6fda1a6769bb8e1f0aff8be2fde8287316196))
+
+
 ## v1.1.0 (2026-03-31)
 
 ### Documentation
