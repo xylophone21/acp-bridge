@@ -182,6 +182,80 @@ class TestFlushAgentChunksImagePath:
         assert "[pic2]" in sent_text
 
 
+class TestFlushAgentChunksFilePath:
+    """Tests for file link detection and upload in _flush_agent_chunks."""
+
+    def _make_fixtures(self, text):
+        session = SessionState(session_id="s1", conversation_id="ch1")
+        sm = MagicMock()
+        sm.find_by_session_id.return_value = ("root1", session)
+        feishu = AsyncMock()
+        feishu.send_message.return_value = "msg1"
+        feishu.send_image.return_value = "img_msg1"
+        feishu.upload_file.return_value = "file_msg1"
+        config = MagicMock()
+        config.bridge.default_workspace = self.workspace
+        config.bridge.output_dir = "tmp/output"
+        config.bridge.attachment_dir = "tmp/attachments"
+        return session, sm, feishu, config, {"s1": text}, {}
+
+    @pytest.fixture(autouse=True)
+    def setup_workspace(self, tmp_path):
+        self.workspace = str(tmp_path)
+        output_dir = tmp_path / "tmp" / "output"
+        output_dir.mkdir(parents=True)
+        (output_dir / "report.xlsx").write_bytes(b"fake excel content")
+        (output_dir / "chart.png").write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 100)
+        (tmp_path / "secret.txt").write_bytes(b"secret data")
+
+    @pytest.mark.asyncio
+    async def test_file_in_output_dir_sent(self):
+        text = "here is the report: [report.xlsx](tmp/output/report.xlsx)"
+        session, sm, feishu, config, text_chunks, thought_chunks = self._make_fixtures(text)
+        await _flush_agent_chunks("s1", feishu, sm, text_chunks, thought_chunks, config)
+        feishu.upload_file.assert_called_once()
+        assert "[file1]" in feishu.send_message.call_args[0][2]
+
+    @pytest.mark.asyncio
+    async def test_file_outside_allowed_dirs_blocked(self):
+        text = "leak: [secret.txt](secret.txt)"
+        session, sm, feishu, config, text_chunks, thought_chunks = self._make_fixtures(text)
+        await _flush_agent_chunks("s1", feishu, sm, text_chunks, thought_chunks, config)
+        feishu.upload_file.assert_not_called()
+        assert "⚠️ File not sent" in feishu.send_message.call_args[0][2]
+
+    @pytest.mark.asyncio
+    async def test_image_ext_sent_as_image(self):
+        text = "see: [chart.png](tmp/output/chart.png)"
+        session, sm, feishu, config, text_chunks, thought_chunks = self._make_fixtures(text)
+        await _flush_agent_chunks("s1", feishu, sm, text_chunks, thought_chunks, config)
+        feishu.upload_file.assert_not_called()
+        feishu.send_image.assert_called_once()
+        assert "[pic1]" in feishu.send_message.call_args[0][2]
+
+    @pytest.mark.asyncio
+    async def test_url_link_ignored(self):
+        text = "see [docs](https://example.com/docs)"
+        session, sm, feishu, config, text_chunks, thought_chunks = self._make_fixtures(text)
+        await _flush_agent_chunks("s1", feishu, sm, text_chunks, thought_chunks, config)
+        feishu.upload_file.assert_not_called()
+        assert "https://example.com/docs" in feishu.send_message.call_args[0][2]
+
+    @pytest.mark.asyncio
+    async def test_markdown_image_not_sent_as_file(self):
+        text = "chart: ![chart](tmp/output/report.xlsx)"
+        session, sm, feishu, config, text_chunks, thought_chunks = self._make_fixtures(text)
+        await _flush_agent_chunks("s1", feishu, sm, text_chunks, thought_chunks, config)
+        feishu.upload_file.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_nonexistent_file_ignored(self):
+        text = "see [missing](tmp/output/missing.csv)"
+        session, sm, feishu, config, text_chunks, thought_chunks = self._make_fixtures(text)
+        await _flush_agent_chunks("s1", feishu, sm, text_chunks, thought_chunks, config)
+        feishu.upload_file.assert_not_called()
+
+
 class TestSendToolMsg:
     @pytest.mark.asyncio
     async def test_send_tool_msg(self):
