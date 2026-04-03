@@ -1,5 +1,6 @@
 """Tests for src/bridge.py — unit tests for helper functions and TTL eviction."""
 
+import os
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -93,6 +94,92 @@ class TestFlushAgentChunks:
         await _flush_agent_chunks("s1", feishu, sm, agent_text_chunks, agent_thought_chunks)
 
         assert session.last_bot_message_id == "new_bot_msg"
+
+
+class TestFlushAgentChunksImagePath:
+    """Tests for image path validation in _flush_agent_chunks."""
+
+    def _make_fixtures(self, text):
+        session = SessionState(session_id="s1", conversation_id="ch1")
+        sm = MagicMock()
+        sm.find_by_session_id.return_value = ("root1", session)
+        feishu = AsyncMock()
+        feishu.send_message.return_value = "msg1"
+        feishu.send_image.return_value = "img_msg1"
+        config = MagicMock()
+        config.bridge.default_workspace = self.workspace
+        config.bridge.output_dir = "tmp/output"
+        config.bridge.attachment_dir = "tmp/attachments"
+        return session, sm, feishu, config, {"s1": text}, {}
+
+    @pytest.fixture(autouse=True)
+    def setup_workspace(self, tmp_path):
+        self.workspace = str(tmp_path)
+        # Create allowed dirs and test images
+        output_dir = tmp_path / "tmp" / "output"
+        attach_dir = tmp_path / "tmp" / "attachments"
+        output_dir.mkdir(parents=True)
+        attach_dir.mkdir(parents=True)
+        (output_dir / "chart.png").write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 100)
+        (attach_dir / "photo.jpg").write_bytes(b"\xff\xd8\xff" + b"\x00" * 100)
+        # Create image outside allowed dirs
+        (tmp_path / "secret.png").write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 100)
+
+    @pytest.mark.asyncio
+    async def test_image_in_output_dir_sent(self):
+        text = "result: ![chart](tmp/output/chart.png)"
+        session, sm, feishu, config, text_chunks, thought_chunks = self._make_fixtures(text)
+        await _flush_agent_chunks("s1", feishu, sm, text_chunks, thought_chunks, config)
+        feishu.send_image.assert_called_once()
+        assert "[pic1]" in feishu.send_message.call_args[0][2]
+
+    @pytest.mark.asyncio
+    async def test_image_in_attachment_dir_sent(self):
+        text = "see: ![photo](tmp/attachments/photo.jpg)"
+        session, sm, feishu, config, text_chunks, thought_chunks = self._make_fixtures(text)
+        await _flush_agent_chunks("s1", feishu, sm, text_chunks, thought_chunks, config)
+        feishu.send_image.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_image_outside_allowed_dirs_blocked(self):
+        text = "leak: ![secret](secret.png)"
+        session, sm, feishu, config, text_chunks, thought_chunks = self._make_fixtures(text)
+        await _flush_agent_chunks("s1", feishu, sm, text_chunks, thought_chunks, config)
+        feishu.send_image.assert_not_called()
+        assert "⚠️ Image not sent" in feishu.send_message.call_args[0][2]
+
+    @pytest.mark.asyncio
+    async def test_absolute_path_outside_allowed_dirs_blocked(self):
+        abs_path = os.path.join(self.workspace, "secret.png")
+        text = f"leak: ![secret]({abs_path})"
+        session, sm, feishu, config, text_chunks, thought_chunks = self._make_fixtures(text)
+        await _flush_agent_chunks("s1", feishu, sm, text_chunks, thought_chunks, config)
+        feishu.send_image.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_absolute_path_inside_allowed_dir_sent(self):
+        abs_path = os.path.join(self.workspace, "tmp", "output", "chart.png")
+        text = f"result: ![chart]({abs_path})"
+        session, sm, feishu, config, text_chunks, thought_chunks = self._make_fixtures(text)
+        await _flush_agent_chunks("s1", feishu, sm, text_chunks, thought_chunks, config)
+        feishu.send_image.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_path_traversal_blocked(self):
+        text = "leak: ![hack](tmp/output/../../secret.png)"
+        session, sm, feishu, config, text_chunks, thought_chunks = self._make_fixtures(text)
+        await _flush_agent_chunks("s1", feishu, sm, text_chunks, thought_chunks, config)
+        feishu.send_image.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_multiple_images_numbered(self):
+        text = "a ![a](tmp/output/chart.png) b ![b](tmp/output/chart.png)"
+        session, sm, feishu, config, text_chunks, thought_chunks = self._make_fixtures(text)
+        await _flush_agent_chunks("s1", feishu, sm, text_chunks, thought_chunks, config)
+        assert feishu.send_image.call_count == 2
+        sent_text = feishu.send_message.call_args[0][2]
+        assert "[pic1]" in sent_text
+        assert "[pic2]" in sent_text
 
 
 class TestSendToolMsg:

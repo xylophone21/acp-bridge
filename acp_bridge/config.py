@@ -17,6 +17,7 @@ class FeishuConfig:
 class BridgeConfig:
     default_workspace: str = "~"
     attachment_dir: str = "tmp/attachments"
+    output_dir: str = "tmp/output"  # Agent output dir (images, scripts, etc.); also limits image uploads
     auto_approve: bool = False
     allowed_users: list[str] = field(default_factory=list)
     max_sessions: int = 10
@@ -70,6 +71,7 @@ app_secret = "your_app_secret"
 [bridge]
 default_workspace = "~"
 attachment_dir = "tmp/attachments"
+output_dir = "tmp/output"
 auto_approve = false
 allowed_users = []
 max_sessions = 10

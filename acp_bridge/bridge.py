@@ -366,20 +366,33 @@ async def _flush_agent_chunks(
         img_pattern = re.compile(r'!\[([^\]]*)\]\(([^)]+)\)')
         images = [(m.group(0), m.group(2)) for m in img_pattern.finditer(text)]
         img_exts = ('.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp')
+        workspace = os.path.expanduser(config.bridge.default_workspace or "~") if config else os.getcwd()
+        allowed_dirs = []
+        if config:
+            for d in (config.bridge.output_dir, config.bridge.attachment_dir):
+                if d:
+                    allowed_dirs.append(os.path.realpath(os.path.join(workspace, d)))
+        img_count = 0
         for full_match, img_path in images:
             if os.path.isabs(img_path):
                 abs_path = img_path
             else:
-                workspace = os.path.expanduser(config.bridge.default_workspace or "~") if config else os.getcwd()
                 abs_path = os.path.join(workspace, img_path)
-            if os.path.isfile(abs_path) and os.path.splitext(abs_path)[1].lower() in img_exts:
-                try:
-                    img_msg_id = await feishu.send_image(session.conversation_id, root_message_id, abs_path)
-                    if img_msg_id:
-                        session.last_bot_message_id = img_msg_id
-                    text = text.replace(full_match, '').strip()
-                except Exception:
-                    logger.warning("Failed to send image %s", abs_path, exc_info=True)
+            abs_path = os.path.realpath(abs_path)
+            if not os.path.isfile(abs_path) or os.path.splitext(abs_path)[1].lower() not in img_exts:
+                continue
+            if allowed_dirs and not any(abs_path.startswith(d + os.sep) for d in allowed_dirs):
+                logger.warning("Image path outside allowed dirs, skipping: %s", abs_path)
+                text = text.replace(full_match, f"⚠️ Image not sent (path outside allowed dirs: {img_path})")
+                continue
+            try:
+                img_count += 1
+                img_msg_id = await feishu.send_image(session.conversation_id, root_message_id, abs_path)
+                if img_msg_id:
+                    session.last_bot_message_id = img_msg_id
+                text = text.replace(full_match, f'[pic{img_count}]')
+            except Exception:
+                logger.warning("Failed to send image %s", abs_path, exc_info=True)
 
         if text:
             msg_id = await feishu.send_message(session.conversation_id, root_message_id, text)

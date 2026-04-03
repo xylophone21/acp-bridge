@@ -59,6 +59,7 @@ Core features:
    [bridge]
    default_workspace = "~"
    attachment_dir = "tmp/attachments"
+   output_dir = "tmp/output"
    auto_approve = false
    max_sessions = 10
    session_ttl_minutes = 60
@@ -83,6 +84,39 @@ Core features:
 > ```bash
 > tmux new -s acp-bridge "uv run python -m acp_bridge.main run"
 > ```
+
+## Image Support
+
+The bridge automatically detects markdown image references (`![description](path)`) in agent responses and uploads them to Feishu as image messages.
+
+For security, only images under `output_dir` and `attachment_dir` (relative to `default_workspace`) are allowed to be uploaded. Images outside these directories are blocked with a warning.
+
+To enable this, configure your ACP client's system prompt to instruct the agent to save images to the `output_dir` and reference them in markdown format. Each client has its own system prompt mechanism:
+
+- **Kiro CLI**: `.kiro/agents/<name>.json` — `prompt` field
+- **Claude Code**: `CLAUDE.md`
+- **Cursor**: `.cursorrules`
+
+### Example
+
+Given `bridge.toml`:
+
+```toml
+[bridge]
+default_workspace = "~/code/ops-copilot"
+attachment_dir = "bridge/tmp/attachments"
+output_dir = "bridge/tmp/output"
+```
+
+For Kiro CLI, add to `.kiro/agents/cli.json`:
+
+```json
+{
+  "prompt": "When you need to create temp files (scripts, debug output, test data, etc.), always save them under bridge/tmp/output/.\nWhen you need to visualize data (trends, comparisons, etc.), always use matplotlib to save charts to bridge/tmp/output/ and reference them as ![description](bridge/tmp/output/xxx.png).\nNever copy external files into the output directory to send them. Only send files you generated yourself."
+}
+```
+
+The agent generates a chart → saves to `bridge/tmp/output/trend.png` → responds with `![trend](bridge/tmp/output/trend.png)` → bridge uploads the image to Feishu and replaces the markdown with `[pic1]` in the text message.
 
 ## Commands
 
