@@ -20,7 +20,6 @@ app_secret = "test-secret"
 [bridge]
 default_workspace = "/tmp"
 auto_approve = true
-allowed_users = ["user1"]
 max_sessions = 5
 session_ttl_minutes = 30
 
@@ -36,7 +35,6 @@ auto_approve = false
         assert config.feishu.app_secret == "test-secret"
         assert config.bridge.default_workspace == "/tmp"
         assert config.bridge.auto_approve is True
-        assert config.bridge.allowed_users == ["user1"]
         assert config.bridge.max_sessions == 5
         assert config.bridge.session_ttl_minutes == 30
         assert config.agent.name == "test-agent"
@@ -58,7 +56,6 @@ command = "c"
         config = Config.load(str(config_file))
         assert config.bridge.default_workspace == "~"
         assert config.bridge.auto_approve is False
-        assert config.bridge.allowed_users == []
         assert config.agent.env == {}
         assert config.agent.default_mode is None
 

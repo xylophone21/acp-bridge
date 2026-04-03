@@ -19,7 +19,6 @@ class BridgeConfig:
     attachment_dir: str = "tmp/attachments"
     output_dir: str = "tmp/output"  # Agent output dir (images, scripts, etc.); also limits image uploads
     auto_approve: bool = False
-    allowed_users: list[str] = field(default_factory=list)
     max_sessions: int = 10
     session_ttl_minutes: int = 60
     show_thinking: bool = False  # Send agent thinking/reasoning to user
@@ -73,7 +72,6 @@ default_workspace = "~"
 attachment_dir = "tmp/attachments"
 output_dir = "tmp/output"
 auto_approve = false
-allowed_users = []
 max_sessions = 10
 session_ttl_minutes = 60
 show_thinking = false

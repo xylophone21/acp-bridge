@@ -44,7 +44,6 @@ class FakeAgentManager:
 
 class FakeConfig:
     class bridge:
-        allowed_users = []
         default_workspace = "~"
         max_sessions = 10
         session_ttl_minutes = 60
