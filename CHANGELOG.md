@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v1.2.1 (2026-04-03)
+
+### Bug Fixes
+
+- Correct image extension by magic bytes
+  ([`84bb526`](https://github.com/xylophone21/acp-bridge/commit/84bb5262340802727135723cdc4ad46b90d55f85))
+
+
 ## v1.2.0 (2026-04-02)
 
 ### Bug Fixes
