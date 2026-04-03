@@ -1,6 +1,22 @@
 # CHANGELOG
 
 
+## v1.3.0 (2026-04-03)
+
+### Documentation
+
+- Add config field descriptions in README
+  ([`32bb95c`](https://github.com/xylophone21/acp-bridge/commit/32bb95c2072874c9a66b9b8e02077c67792bb75a))
+
+### Features
+
+- Add file upload support and unify image/file link handling
+  ([`da436d9`](https://github.com/xylophone21/acp-bridge/commit/da436d914f7dd4c5ac093faa2b6f6fe94d876683))
+
+- Add output_dir config and image upload path validation
+  ([`649aa96`](https://github.com/xylophone21/acp-bridge/commit/649aa961c9837b2d7cf46432a81a537ac88c5549))
+
+
 ## v1.2.1 (2026-04-03)
 
 ### Bug Fixes
