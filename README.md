@@ -1,5 +1,11 @@
 # ACP Bridge
 
+[![CI](https://img.shields.io/github/actions/workflow/status/xylophone21/acp-bridge/ci.yml?branch=main&label=CI)](https://github.com/xylophone21/acp-bridge/actions/workflows/ci.yml)
+[![Version](https://img.shields.io/github/v/release/xylophone21/acp-bridge?label=version)](https://github.com/xylophone21/acp-bridge/releases)
+[![License](https://img.shields.io/github/license/xylophone21/acp-bridge)](https://github.com/xylophone21/acp-bridge/blob/main/LICENSE)
+[![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://github.com/xylophone21/acp-bridge)
+[![Last Commit](https://img.shields.io/github/last-commit/xylophone21/acp-bridge/main)](https://github.com/xylophone21/acp-bridge/commits/main)
+
 ACP Bridge is a bridge service that connects [Feishu (Lark)](https://www.feishu.cn/) group chats to ACP-compatible AI agents (such as [Kiro CLI](https://kiro.dev/cli/)).
 
 Core features:
