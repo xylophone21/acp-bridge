@@ -86,6 +86,19 @@ class FeishuEvent:
             self.clean_text = self.text
 
 
+def _detect_image_ext(data: bytes) -> Optional[str]:
+    """Return correct extension based on image magic bytes, or None to keep original."""
+    if data[:3] == b"\xff\xd8\xff":
+        return ".jpg"
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return ".png"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return ".webp"
+    if data[:6] in (b"GIF87a", b"GIF89a"):
+        return ".gif"
+    return None
+
+
 def _parse_content(msg_type: str, content_str: str) -> tuple[str, list[FeishuFile]]:
     """Parse message content JSON into (text, files) based on msg_type."""
     text = ""
@@ -419,6 +432,13 @@ class FeishuConnection:
                 resource_type="image" if f.file_type == "image" else "file",
             )
             if data:
+                # Fix extension based on actual content (Feishu always returns .png name but may serve JPEG)
+                if f.file_type == "image":
+                    ext = _detect_image_ext(data)
+                    if ext:
+                        base, _ = os.path.splitext(path)
+                        path = base + ext
+                        f.file_name = os.path.basename(path)
                 with open(path, "wb") as fh:
                     fh.write(data)
                 logger.debug("Downloaded %s -> %s", f.file_key, path)
