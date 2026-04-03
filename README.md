@@ -57,21 +57,21 @@ Core features:
    app_secret = "your_app_secret"
 
    [bridge]
-   default_workspace = "~"
-   attachment_dir = "tmp/attachments"
-   output_dir = "tmp/output"
-   auto_approve = false
-   max_sessions = 10
-   session_ttl_minutes = 60
-   show_thinking = false
-   show_intermediate = false
+   default_workspace = "~"          # Agent working directory (cwd)
+   attachment_dir = "tmp/attachments" # Where user attachments from Feishu are saved
+   output_dir = "tmp/output"        # Where agent output files (images, scripts) are saved
+   auto_approve = false             # Auto-approve all tool permission requests
+   max_sessions = 10                # Max concurrent agent sessions (LRU eviction)
+   session_ttl_minutes = 60         # Idle session timeout
+   show_thinking = false            # Forward agent thinking/reasoning to user
+   show_intermediate = false        # Forward intermediate tool output to user
 
    [agent]
-   name = "kiro"
+   name = "kiro"                    # Agent identifier
    description = "Kiro CLI - https://kiro.dev/cli/"
-   command = "kiro-cli"
-   args = ["acp"]
-   auto_approve = false
+   command = "kiro-cli"             # Command to spawn the agent process
+   args = ["acp"]                   # Command arguments
+   auto_approve = false             # Auto-approve at agent level
    ```
 
 4. Start the service:
