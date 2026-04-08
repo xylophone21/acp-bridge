@@ -1,6 +1,28 @@
 # CHANGELOG
 
 
+## v1.3.1 (2026-04-08)
+
+### Bug Fixes
+
+- Buffered message sender shows open_id instead of username
+  ([`537dd21`](https://github.com/xylophone21/acp-bridge/commit/537dd21fb4aa76f838e5ab54e5602ef1d8ceff60))
+
+- Config startup error on unknown toml fields
+  ([`b2ed832`](https://github.com/xylophone21/acp-bridge/commit/b2ed832e14a7951e066f1d33424816bf0d846834))
+
+- Quoted message text lost when replying with attachment reference
+  ([`0f14c73`](https://github.com/xylophone21/acp-bridge/commit/0f14c7392fa58855192a1eea65a73b318a9983b7))
+
+### Documentation
+
+- Add status badges to README
+  ([`2ab7b57`](https://github.com/xylophone21/acp-bridge/commit/2ab7b572aa6acb05732618bab3f6ea5d752bc7dc))
+
+- Update Image & File Support section, remove unimplemented allowed_users
+  ([`742e939`](https://github.com/xylophone21/acp-bridge/commit/742e939a588abd6418c9ce686b9ea1a8aa9b0af9))
+
+
 ## v1.3.0 (2026-04-03)
 
 ### Documentation
