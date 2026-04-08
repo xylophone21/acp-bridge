@@ -18,24 +18,22 @@ _init_locks: dict[str, asyncio.Lock] = {}
 
 
 async def handle_message(
-    event: FeishuEvent,
+    events: list[FeishuEvent],
     feishu: FeishuConnection,
     config: Config,
     agent_manager: AgentManager,
     session_manager: SessionManager,
     notification_flush_callback: Optional[Callable[[str], Coroutine]],
 ):
-    """Handle a regular message (not a command) by forwarding to the agent.
+    """Handle one or more messages by forwarding to the agent.
 
-    Supports auto-creating sessions, silent buffering when busy,
-    flushing buffered messages after prompt completion, and
-    recording last_bot_message_id.
+    Accepts a list of FeishuEvent (single message or merged from buffer flush).
     """
+    event = events[0]
     text = event.text
     conversation_id = event.conversation_id
     root_message_id = event.root_id
-    reply_id = event.message_id
-    sender_id = event.sender_id
+    reply_id = events[-1].message_id
 
     session = session_manager.get_session_by_root(root_message_id)
     created = False
@@ -69,8 +67,9 @@ async def handle_message(
 
     # --- Session exists and is busy: silent buffer ---
     if not created and session.busy:
-        session_manager.buffer_message(root_message_id, sender_id, text)
-        logger.debug("Buffered message for busy session %s", root_message_id)
+        for e in events:
+            session_manager.buffer_message(root_message_id, e)
+        logger.debug("Buffered %d message(s) for busy session %s", len(events), root_message_id)
         return
 
     # --- Session exists and not busy: touch + send prompt ---
@@ -81,17 +80,17 @@ async def handle_message(
 
     _start_prompt(
         session,
-        text,
+        events,
         root_message_id,
         reply_id,
         conversation_id,
-        event,
         feishu,
         config,
         agent_manager,
         session_manager,
         notification_flush_callback,
         typing_reaction_id=early_reaction_id,
+        new_session=created,
     )
 
 
@@ -171,17 +170,17 @@ async def _ensure_session(
 
 def _start_prompt(
     session,
-    text,
+    events: list[FeishuEvent],
     root_message_id,
     reply_id,
     conversation_id,
-    event,
     feishu,
     config,
     agent_manager,
     session_manager,
     notification_flush_callback,
     typing_reaction_id=None,
+    new_session=False,
 ):
     """Launch the prompt task. Session must already be marked busy."""
 
@@ -193,28 +192,29 @@ def _start_prompt(
             except Exception:
                 logger.debug("Failed to add typing indicator", exc_info=True)
 
-        # Resolve sender identity for the agent
-        name, email = await feishu.get_user_info(event.sender_id)
-        if name and email:
-            identity = f"{name}, {email}"
-        elif name:
-            identity = name
-        elif email:
-            identity = email
-        else:
-            identity = "unknown user"
-            logger.debug("Could not resolve user info for sender %s", event.sender_id)
-        prompt_text = f"[Current user: {identity}]\n{text}"
-
-        # Download attachments (images/files) and resolve placeholders
-        if event.files or event.parent_id:
-            workspace = expand_path(config.bridge.default_workspace)
-            resolved = await feishu.resolve_attachments(event, workspace, config.bridge.attachment_dir)
-            prompt_text = f"[Current user: {identity}]\n{resolved}"
-
-        content = [{"type": "text", "text": prompt_text}]
+        # Build prompt from all events
+        content = []
         try:
-            logger.debug("[%s] Sending prompt to agent: %.500s", reply_id, prompt_text)
+            for e in events:
+                name, email = await feishu.get_user_info(e.sender_id)
+                if name and email:
+                    identity = f"{name}, {email}"
+                elif name:
+                    identity = name
+                elif email:
+                    identity = email
+                else:
+                    identity = "unknown user"
+                    logger.debug("Could not resolve user info for sender %s", e.sender_id)
+                text = e.text
+                if e.files or e.parent_id:
+                    workspace = expand_path(config.bridge.default_workspace)
+                    text = await feishu.resolve_attachments(
+                        e, workspace, config.bridge.attachment_dir,
+                        resolve_parent=new_session,
+                    )
+                content.append({"type": "text", "text": f"[Current user: {identity}]\n{text}"})
+            logger.debug("[%s] Sending prompt to agent: %.500s", reply_id, content)
             result = await agent_manager.prompt(session.session_id, content)
             logger.debug("Prompt completed: stop_reason=%s", result.get("stopReason"))
             if notification_flush_callback:
@@ -247,15 +247,12 @@ def _start_prompt(
 
             # Flush buffered messages and send as new prompt if any
             try:
-                merged = session_manager.flush_buffer(root_message_id)
-                if merged:
-                    logger.debug("[%s] Buffer flushed, sending merged prompt: %.100s", reply_id, merged)
-                    from dataclasses import replace
-
-                    merged_event = replace(event, text=merged)
+                buffered_events = session_manager.flush_buffer(root_message_id)
+                if buffered_events:
+                    logger.debug("[%s] Buffer flushed, %d message(s)", reply_id, len(buffered_events))
                     asyncio.create_task(
                         handle_message(
-                            merged_event,
+                            buffered_events,
                             feishu,
                             config,
                             agent_manager,

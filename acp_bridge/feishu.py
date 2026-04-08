@@ -384,7 +384,9 @@ class FeishuConnection:
 
         return resp.data.message_id  # type: ignore[union-attr]
 
-    async def resolve_attachments(self, event: FeishuEvent, workspace: str, attachment_dir: str) -> str:
+    async def resolve_attachments(
+        self, event: FeishuEvent, workspace: str, attachment_dir: str, resolve_parent: bool = True,
+    ) -> str:
         """Download all attachments (inline + quoted parent) and return resolved text.
 
         Args:
@@ -409,7 +411,7 @@ class FeishuConnection:
                 text = text.replace(placeholder, "")
 
         # Fetch and download attachments from quoted parent message
-        if event.parent_id:
+        if event.parent_id and resolve_parent:
             parent_text, parent_files = await self._get_parent_content(event.parent_id)
             for f in parent_files:
                 placeholder = f"{{{{attachment:{f.file_key}}}}}"

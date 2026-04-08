@@ -120,9 +120,9 @@ class TestHandleEvent:
             mock_cmd.assert_not_called()
             # Verify correct arguments
             call_args = mock_msg.call_args
-            assert call_args[0][0].text == "please help me"  # text
-            assert call_args[0][0].conversation_id == "ch1"  # channel
-            assert call_args[0][0].root_id == "m1"  # root_message_id
+            assert call_args[0][0][0].text == "please help me"  # text
+            assert call_args[0][0][0].conversation_id == "ch1"  # channel
+            assert call_args[0][0][0].root_id == "m1"  # root_message_id
 
     # ---- Test 3: existing session + plain text → handle_message called ----
 
@@ -152,8 +152,8 @@ class TestHandleEvent:
             mock_msg.assert_called_once()
             mock_cmd.assert_not_called()
             call_args = mock_msg.call_args
-            assert call_args[0][0].text == "continue the conversation"
-            assert call_args[0][0].root_id == "root1"  # root_message_id
+            assert call_args[0][0][0].text == "continue the conversation"
+            assert call_args[0][0][0].root_id == "root1"  # root_message_id
 
     # ---- Test 4: existing session + # command → handle_command (no @bot needed) ----
 
@@ -306,7 +306,7 @@ class TestHandleEvent:
             )
             # Should route to root1 session
             call_args = mock_msg.call_args
-            assert call_args[0][0].root_id == "root1"
+            assert call_args[0][0][0].root_id == "root1"
 
     @pytest.mark.asyncio
     async def test_root_message_id_uses_message_id_when_no_root_id(self):
@@ -330,7 +330,7 @@ class TestHandleEvent:
                 sm, {}, None,
             )
             call_args = mock_msg.call_args
-            assert call_args[0][0].root_id == "m1"
+            assert call_args[0][0][0].root_id == "m1"
 
     # ---- Test: existing session + @bot + plain text → still routes to session ----
 
@@ -356,7 +356,7 @@ class TestHandleEvent:
                 sm, {}, None,
             )
             mock_msg.assert_called_once()
-            assert mock_msg.call_args[0][0].root_id == "root1"
+            assert mock_msg.call_args[0][0][0].root_id == "root1"
 
 
 # ---------------------------------------------------------------------------
@@ -411,7 +411,7 @@ class TestHandleEventProperties:
             mock_msg.assert_called_once()
             mock_cmd.assert_not_called()
             call_args = mock_msg.call_args
-            assert call_args[0][0].root_id == root_id
+            assert call_args[0][0][0].root_id == root_id
 
     # Feature: session-refactor, Property 2: 消息路由到已有 Session
     # Validates: Requirements 1.2, 1.8, 2.2
@@ -454,7 +454,7 @@ class TestHandleEventProperties:
             mock_msg.assert_called_once()
             mock_cmd.assert_not_called()
             # Verify routed to existing session's root_message_id
-            assert mock_msg.call_args[0][0].root_id == root_id
+            assert mock_msg.call_args[0][0][0].root_id == root_id
             # No new session created (still only the original one)
             assert len(sm.sessions) == 1
 

@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from acp_bridge.config import Config
+from acp_bridge.feishu import FeishuEvent
 
 logger = logging.getLogger(__name__)
 
@@ -22,8 +23,7 @@ class SessionState:
     last_active: float = 0.0
     last_bot_message_id: str = ""
     # User -> Agent buffer: messages that arrive while agent is busy.
-    # Elements: (timestamp, sender_id, text)
-    message_buffer: list[tuple[float, str, str]] = field(default_factory=list)
+    message_buffer: list[FeishuEvent] = field(default_factory=list)
 
 
 class SessionManager:
@@ -92,21 +92,22 @@ class SessionManager:
                 expired.append(s)
         return expired
 
-    def buffer_message(self, root_message_id: str, sender: str, text: str):
+    def buffer_message(self, root_message_id: str, event: FeishuEvent) -> None:
         s = self._sessions.get(root_message_id)
         if s is None:
             raise ValueError(f"Session not found: {root_message_id}")
-        s.message_buffer.append((time.time(), sender, text))
+        s.message_buffer.append(event)
 
-    def flush_buffer(self, root_message_id: str) -> Optional[str]:
+    def flush_buffer(self, root_message_id: str) -> list[FeishuEvent]:
+        """Flush buffered events. Returns list of FeishuEvent or empty list."""
         s = self._sessions.get(root_message_id)
         if s is None:
-            return None
+            return []
         if not s.message_buffer:
-            return None
-        msgs = sorted(s.message_buffer, key=lambda m: m[0])
+            return []
+        events = list(s.message_buffer)
         s.message_buffer = []
-        return "\n".join(f"[{sender}]: {text}" for _, sender, text in msgs)
+        return events
 
     def get_session_by_root(self, key: str) -> Optional[SessionState]:
         return self._sessions.get(key)

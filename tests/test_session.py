@@ -2,6 +2,7 @@
 
 import asyncio
 import time
+from unittest.mock import MagicMock
 
 import pytest
 from hypothesis import given, settings
@@ -326,20 +327,20 @@ class TestBufferMessage:
     async def test_messages_appended(self, manager):
         _create(manager, root="root1", ch="ch1", text="hi")
 
-        manager.buffer_message("root1", "Alice", "msg1")
-        manager.buffer_message("root1", "Bob", "msg2")
+        evt1 = MagicMock(text="msg1", sender_id="Alice")
+        evt2 = MagicMock(text="msg2", sender_id="Bob")
+        manager.buffer_message("root1", evt1)
+        manager.buffer_message("root1", evt2)
 
         s = manager.get_session_by_root("root1")
         assert len(s.message_buffer) == 2
-        assert s.message_buffer[0][1] == "Alice"
-        assert s.message_buffer[0][2] == "msg1"
-        assert s.message_buffer[1][1] == "Bob"
-        assert s.message_buffer[1][2] == "msg2"
+        assert s.message_buffer[0].text == "msg1"
+        assert s.message_buffer[1].text == "msg2"
 
     @pytest.mark.asyncio
     async def test_buffer_nonexistent_raises(self, manager):
         with pytest.raises(ValueError, match="Session not found"):
-            manager.buffer_message("nope", "Alice", "hi")
+            manager.buffer_message("nope", MagicMock())
 
 
 # ---------------------------------------------------------------------------
@@ -350,32 +351,28 @@ class TestFlushBuffer:
     """Validates: Requirements 2.6, 2.7"""
 
     @pytest.mark.asyncio
-    async def test_flush_sorted_and_formatted(self, config):
+    async def test_flush_returns_buffered_events(self, config):
         mgr = SessionManager(config)
         s = _make_session("s1")
-        # Insert messages out of order
-        s.message_buffer = [
-            (200.0, "Bob", "second"),
-            (100.0, "Alice", "first"),
-            (300.0, "Charlie", "third"),
-        ]
+        evt1 = MagicMock(text="first")
+        evt2 = MagicMock(text="second")
+        s.message_buffer = [evt1, evt2]
         mgr._sessions["root1"] = s
 
         result = mgr.flush_buffer("root1")
-        assert result == "[Alice]: first\n[Bob]: second\n[Charlie]: third"
-        # Buffer cleared
+        assert result == [evt1, evt2]
         assert s.message_buffer == []
 
     @pytest.mark.asyncio
-    async def test_flush_empty_buffer_returns_none(self, manager):
+    async def test_flush_empty_buffer_returns_empty(self, manager):
         _create(manager, root="root1", ch="ch1", text="hi")
         result = manager.flush_buffer("root1")
-        assert result is None
+        assert result == []
 
     @pytest.mark.asyncio
-    async def test_flush_nonexistent_returns_none(self, manager):
+    async def test_flush_nonexistent_returns_empty(self, manager):
         result = manager.flush_buffer("nope")
-        assert result is None
+        assert result == []
 
 
 # ---------------------------------------------------------------------------
@@ -398,37 +395,31 @@ class TestPropertySummaryTruncation:
 
 
 class TestPropertyBufferMerge:
-    """Property 8: 消息缓存按时间顺序合并并保留发送者"""
+    """Property 8: 消息缓存按插入顺序返回"""
 
-    # Feature: session-refactor, Property 8: 消息缓存按时间顺序合并并保留发送者
-    # **Validates: Requirements 2.6, 2.7**
     @given(
-        messages=st.lists(
-            st.tuples(
-                st.floats(min_value=0.0, max_value=1e12, allow_nan=False, allow_infinity=False),
-                st.text(min_size=1, alphabet=st.characters(blacklist_categories=("Cs",), blacklist_characters="\n[]:")),
-                st.text(min_size=1, alphabet=st.characters(blacklist_categories=("Cs",), blacklist_characters="\n")),
-            ),
-            min_size=1,
-            max_size=20,
-        )
+        count=st.integers(min_value=1, max_value=20),
     )
     @settings(max_examples=100)
-    def test_flush_buffer_sorted_and_contains_senders(self, messages):
-        """flush_buffer result is sorted by timestamp ascending and contains all senders."""
-        # Sort messages by timestamp to get expected order
-        sorted_msgs = sorted(messages, key=lambda m: m[0])
-        # Build expected merged text
-        lines = [f"[{sender}]: {text}" for _, sender, text in sorted_msgs]
-        merged = "\n".join(lines)
+    def test_flush_buffer_returns_all_events_in_order(self, count):
+        """flush_buffer returns all buffered events in insertion order."""
+        from acp_bridge.config import BridgeConfig
+        config = Config(
+            feishu=MagicMock(),
+            bridge=BridgeConfig(max_sessions=50),
+            agent=MagicMock(),
+        )
+        mgr = SessionManager(config)
+        s = _make_session("s1")
+        events = [MagicMock(text=f"msg{i}") for i in range(count)]
+        s.message_buffer = list(events)
+        mgr._sessions["root1"] = s
 
-        # Verify sorted by timestamp: lines appear in ascending timestamp order
-        result_lines = merged.split("\n")
-        assert len(result_lines) == len(messages)
-
-        # Verify all senders appear in the result
-        for _, sender, _ in messages:
-            assert f"[{sender}]" in merged
+        result = mgr.flush_buffer("root1")
+        assert len(result) == count
+        for i, evt in enumerate(result):
+            assert evt.text == f"msg{i}"
+        assert s.message_buffer == []
 
 
 class TestPropertyLruEviction:

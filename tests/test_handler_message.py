@@ -97,9 +97,9 @@ class FakeSessionManager:
         self._sessions = {}
         self._config = config or FakeConfig()
         self._touched: list[str] = []
-        self._buffered: list[tuple[str, str, str]] = []
+        self._buffered: list = []
         self._flushed: list[str] = []
-        self._flush_result: Optional[str] = None
+        self._flush_result: Optional[list] = None
         self._create_error: Optional[Exception] = None
         self._create_result: Optional[SessionState] = None
 
@@ -138,11 +138,11 @@ class FakeSessionManager:
             raise ValueError(f"Session not found: {key}")
         session.busy = busy
 
-    def buffer_message(self, root_message_id, sender, text):
-        self._buffered.append((root_message_id, sender, text))
+    def buffer_message(self, root_message_id, event):
+        self._buffered.append((root_message_id, event))
         session = self._sessions.get(root_message_id)
         if session is not None:
-            session.message_buffer.append((len(self._buffered), sender, text))
+            session.message_buffer.append(event)
 
     def flush_buffer(self, root_message_id):
         self._flushed.append(root_message_id)
@@ -150,13 +150,13 @@ class FakeSessionManager:
             return self._flush_result
         session = self._sessions.get(root_message_id)
         if session is None or not session.message_buffer:
-            return None
-        buffered = session.message_buffer
+            return []
+        buffered = list(session.message_buffer)
         session.message_buffer = []
-        return "\n".join(f"[{sender}]: {text}" for _, sender, text in buffered)
+        return buffered
 
 
-def _make_event(text="hello", sender_name="user1", message_id="m1", root_id="root1", conversation_id="ch1"):
+def _make_event(text="hello", sender_id="ou_user1", message_id="m1", root_id="root1", conversation_id="ch1"):
     return FeishuEvent(
         conversation_id=conversation_id,
         message_id=message_id,
@@ -164,7 +164,7 @@ def _make_event(text="hello", sender_name="user1", message_id="m1", root_id="roo
         text=text,
         root_id=root_id,
         is_mention_bot=True,
-        sender_id=sender_name,
+        sender_id=sender_id,
     )
 
 
@@ -186,7 +186,7 @@ class TestAutoCreateSession:
         event = _make_event(text="hello world")
 
         await handle_message(
-            event, feishu, FakeConfig(), agent_mgr, session_mgr, None,
+            [event], feishu, FakeConfig(), agent_mgr, session_mgr, None,
         )
 
         # Session should be created
@@ -203,7 +203,7 @@ class TestAutoCreateSession:
         event = _make_event(text="hello")
 
         await handle_message(
-            event, feishu, FakeConfig(), agent_mgr, session_mgr, None,
+            [event], feishu, FakeConfig(), agent_mgr, session_mgr, None,
         )
 
         assert any(
@@ -220,7 +220,7 @@ class TestAutoCreateSession:
         event = _make_event(text="hello")
 
         await handle_message(
-            event, feishu, FakeConfig(), agent_mgr, session_mgr, None,
+            [event], feishu, FakeConfig(), agent_mgr, session_mgr, None,
         )
 
         assert any("Error:" in m[2] for m in feishu.messages)
@@ -238,17 +238,17 @@ class TestSilentBuffering:
         session = SessionState(session_id="s1", conversation_id="ch1", busy=True)
         session_mgr._sessions["root1"] = session
 
-        event = _make_event(text="buffered msg", sender_name="alice")
+        event = _make_event(text="buffered msg", sender_id="ou_alice")
 
         await handle_message(
-            event, feishu, FakeConfig(), agent_mgr, session_mgr, None,
+            [event], feishu, FakeConfig(), agent_mgr, session_mgr, None,
         )
 
         # No messages sent to user (silent)
         assert len(feishu.messages) == 0
         # Message was buffered
         assert len(session_mgr._buffered) == 1
-        assert session_mgr._buffered[0] == ("root1", "alice", "buffered msg")
+        assert session_mgr._buffered[0] == ("root1", event)
 
     @pytest.mark.asyncio
     async def test_busy_session_no_prompt_sent(self):
@@ -262,7 +262,7 @@ class TestSilentBuffering:
         event = _make_event(text="msg")
 
         await handle_message(
-            event, feishu, FakeConfig(), agent_mgr, session_mgr, None,
+            [event], feishu, FakeConfig(), agent_mgr, session_mgr, None,
         )
 
         # No prompt sent to agent
@@ -282,7 +282,7 @@ class TestTouchAndPrompt:
         event = _make_event(text="hello")
 
         await handle_message(
-            event, feishu, FakeConfig(), agent_mgr, session_mgr, None,
+            [event], feishu, FakeConfig(), agent_mgr, session_mgr, None,
         )
 
         assert "root1" in session_mgr._touched
@@ -299,7 +299,7 @@ class TestTouchAndPrompt:
         event = _make_event(text="hello")
 
         await handle_message(
-            event, feishu, FakeConfig(), agent_mgr, session_mgr, None,
+            [event], feishu, FakeConfig(), agent_mgr, session_mgr, None,
         )
 
         # Give the async task a chance to run
@@ -322,7 +322,7 @@ class TestTouchAndPrompt:
         event = _make_event(text="hello")
 
         await handle_message(
-            event, feishu, FakeConfig(), agent_mgr, session_mgr, None,
+            [event], feishu, FakeConfig(), agent_mgr, session_mgr, None,
         )
 
         # Session should be set to busy immediately (before async task runs)
@@ -345,7 +345,7 @@ class TestFlushBuffer:
         event = _make_event(text="hello")
 
         await handle_message(
-            event, feishu, FakeConfig(), agent_mgr, session_mgr, None,
+            [event], feishu, FakeConfig(), agent_mgr, session_mgr, None,
         )
 
         await asyncio.sleep(0.05)
@@ -357,7 +357,7 @@ class TestFlushBuffer:
         feishu = FakeFeishu()
         agent_mgr = FakeAgentManager()
         session_mgr = FakeSessionManager()
-        session_mgr._flush_result = "[alice]: follow up message"
+        session_mgr._flush_result = [_make_event(text="follow up message", sender_id="ou_alice")]
 
         session = SessionState(session_id="s1", conversation_id="ch1", busy=False)
         session_mgr._sessions["root1"] = session
@@ -365,7 +365,7 @@ class TestFlushBuffer:
         event = _make_event(text="hello")
 
         await handle_message(
-            event, feishu, FakeConfig(), agent_mgr, session_mgr, None,
+            [event], feishu, FakeConfig(), agent_mgr, session_mgr, None,
         )
 
         # Wait for both the initial prompt and the recursive call
@@ -384,7 +384,7 @@ class TestNewSessionThenPrompt:
         event = _make_event(text="hello agent")
 
         await handle_message(
-            event, feishu, FakeConfig(), agent_mgr, session_mgr, None,
+            [event], feishu, FakeConfig(), agent_mgr, session_mgr, None,
         )
 
         await asyncio.sleep(0.05)
@@ -417,14 +417,14 @@ class TestNewSessionThenPrompt:
 
         first = asyncio.create_task(
             handle_message(
-                _make_event(text="first", sender_name="alice"),
+                [_make_event(text="first", sender_id="ou_alice")],
                 feishu, config, agent_mgr, session_mgr, None,
             )
         )
         await asyncio.sleep(0.01)
         second = asyncio.create_task(
             handle_message(
-                _make_event(text="second", sender_name="bob", message_id="m2"),
+                [_make_event(text="second", sender_id="ou_bob", message_id="m2")],
                 feishu, config, agent_mgr, session_mgr, None,
             )
         )
@@ -434,7 +434,7 @@ class TestNewSessionThenPrompt:
 
         assert [prompt[1][0]["text"] for prompt in agent_mgr.prompts] == [
             "[Current user: Test User, testuser@example.com]\nfirst",
-            "[Current user: Test User, testuser@example.com]\n[bob]: second",
+            "[Current user: Test User, testuser@example.com]\nsecond",
         ]
 
     @pytest.mark.asyncio
@@ -451,7 +451,7 @@ class TestNewSessionThenPrompt:
         )
 
         await handle_message(
-            _make_event(text="hello"),
+            [_make_event(text="hello")],
             feishu, FakeConfig(), agent_mgr, session_mgr, None,
         )
         await asyncio.sleep(0.05)

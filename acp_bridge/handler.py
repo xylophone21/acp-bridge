@@ -53,7 +53,7 @@ async def handle_event(
         elif session.busy:
             logger.info("[%s] Buffered (busy)", msg_id)
             await handle_message(
-                event,
+                [event],
                 feishu,
                 config,
                 agent_manager,
@@ -63,7 +63,7 @@ async def handle_event(
         else:
             logger.info("[%s] Prompt", msg_id)
             await handle_message(
-                event,
+                [event],
                 feishu,
                 config,
                 agent_manager,
@@ -82,7 +82,7 @@ async def handle_event(
         else:
             logger.info("[%s] New conversation", msg_id)
             await handle_message(
-                event,
+                [event],
                 feishu,
                 config,
                 agent_manager,
