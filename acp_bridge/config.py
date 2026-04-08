@@ -45,13 +45,18 @@ class Config:
 
     @staticmethod
     def load(path: str) -> "Config":
+        import dataclasses
+
+        def _filter(cls, data: dict) -> dict:
+            names = {f.name for f in dataclasses.fields(cls)}
+            return {k: v for k, v in data.items() if k in names}
+
         with open(path) as f:
             data = toml.load(f)
 
-        feishu = FeishuConfig(**data["feishu"])
-        bridge = BridgeConfig(**data.get("bridge", {}))
-
-        agent = AgentConfig(**data["agent"])
+        feishu = FeishuConfig(**_filter(FeishuConfig, data["feishu"]))
+        bridge = BridgeConfig(**_filter(BridgeConfig, data.get("bridge", {})))
+        agent = AgentConfig(**_filter(AgentConfig, data["agent"]))
 
         config = Config(feishu=feishu, bridge=bridge, agent=agent)
         config._validate()
