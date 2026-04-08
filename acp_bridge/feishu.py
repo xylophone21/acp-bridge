@@ -410,12 +410,18 @@ class FeishuConnection:
 
         # Fetch and download attachments from quoted parent message
         if event.parent_id:
-            parent_files = await self._get_parent_files(event.parent_id)
+            parent_text, parent_files = await self._get_parent_content(event.parent_id)
             for f in parent_files:
+                placeholder = f"{{{{attachment:{f.file_key}}}}}"
                 path = await self._save_file(event.parent_id, f, abs_dir)
                 if path:
                     ref = os.path.join(attachment_dir, f.file_name)
-                    text += f"\n[Attached {f.file_type} from quoted message: {ref}]\n"
+                    tag = f"\n[Attached {f.file_type} from quoted message: {ref}]\n"
+                    parent_text = parent_text.replace(placeholder, tag)
+                else:
+                    parent_text = parent_text.replace(placeholder, "")
+            if parent_text.strip():
+                text += f"\n[Quoted message: {parent_text.strip()}]\n"
 
         return text
 
@@ -447,17 +453,16 @@ class FeishuConnection:
             logger.warning("Failed to download %s %s", f.file_type, f.file_key, exc_info=True)
         return None
 
-    async def _get_parent_files(self, parent_id: str) -> list[FeishuFile]:
-        """Fetch a message by ID and extract any file/image attachments."""
+    async def _get_parent_content(self, parent_id: str) -> tuple[str, list[FeishuFile]]:
+        """Fetch a message by ID and extract text and file/image attachments."""
         req = GetMessageRequest.builder().message_id(parent_id).build()
         resp = await _retry_on_rate_limit(lambda: self._client.im.v1.message.aget(req))  # type: ignore[union-attr]
         if not resp.success() or not resp.data or not resp.data.items:
-            return []
+            return "", []
         msg = resp.data.items[0]
         msg_type = msg.msg_type or ""
         content_str = msg.body.content if msg.body else ""
-        _, files = _parse_content(msg_type, content_str or "")
-        return files
+        return _parse_content(msg_type, content_str or "")
 
     async def _download_file(self, message_id: str, file_key: str, resource_type: str = "file") -> Optional[bytes]:
         """Download a file or image from Feishu.

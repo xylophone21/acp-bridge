@@ -396,7 +396,7 @@ class TestGetParentFiles:
     async def test_parent_image_message(self):
         conn = _make_conn()
         self._mock_get_response(conn, "image", '{"image_key": "img_k1"}')
-        files = await conn._get_parent_files("om_parent")
+        text, files = await conn._get_parent_content("om_parent")
         assert len(files) == 1
         assert files[0].file_key == "img_k1"
         assert files[0].file_type == "image"
@@ -405,7 +405,7 @@ class TestGetParentFiles:
     async def test_parent_file_message(self):
         conn = _make_conn()
         self._mock_get_response(conn, "file", '{"file_key": "fk_1", "file_name": "doc.pdf"}')
-        files = await conn._get_parent_files("om_parent")
+        text, files = await conn._get_parent_content("om_parent")
         assert len(files) == 1
         assert files[0].file_key == "fk_1"
         assert files[0].file_name == "fk_1_doc.pdf"
@@ -422,7 +422,7 @@ class TestGetParentFiles:
             ]]
         })
         self._mock_get_response(conn, "post", content)
-        files = await conn._get_parent_files("om_parent")
+        text, files = await conn._get_parent_content("om_parent")
         assert len(files) == 2
         assert files[0].file_key == "img_a"
         assert files[1].file_key == "img_b"
@@ -431,8 +431,9 @@ class TestGetParentFiles:
     async def test_parent_text_message_returns_empty(self):
         conn = _make_conn()
         self._mock_get_response(conn, "text", '{"text": "hello"}')
-        files = await conn._get_parent_files("om_parent")
+        text, files = await conn._get_parent_content("om_parent")
         assert files == []
+        assert text == "hello"
 
     @pytest.mark.asyncio
     async def test_parent_api_failure_returns_empty(self):
@@ -440,7 +441,8 @@ class TestGetParentFiles:
         resp = MagicMock()
         resp.success.return_value = False
         conn._client.im.v1.message.aget = AsyncMock(return_value=resp)
-        files = await conn._get_parent_files("om_parent")
+        text, files = await conn._get_parent_content("om_parent")
+        assert text == ""
         assert files == []
     @pytest.mark.asyncio
     async def test_reply_uses_reply_api(self):
