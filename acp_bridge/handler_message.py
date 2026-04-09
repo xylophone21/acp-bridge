@@ -17,6 +17,11 @@ logger = logging.getLogger(__name__)
 _init_locks: dict[str, asyncio.Lock] = {}
 
 
+def is_session_creating(root_message_id: str) -> bool:
+    """Check if a session is currently being created for the given root."""
+    return root_message_id in _init_locks
+
+
 async def handle_message(
     events: list[FeishuEvent],
     feishu: FeishuConnection,

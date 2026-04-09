@@ -100,6 +100,25 @@ class TestHandleEvent:
         # No messages sent
         assert len(feishu.messages) == 0
 
+    # ---- Test: no session + not @bot + session creating → forwarded ----
+
+    @pytest.mark.asyncio
+    async def test_no_session_not_mention_bot_but_creating_forwards(self):
+        """No session + not @bot but session is being created → handle_message called."""
+        from acp_bridge.handler import handle_event
+
+        feishu = FakeFeishu()
+        event = _make_event(text="follow up", message_id="m2", root_id="root1", is_mention_bot=False)
+
+        with patch("acp_bridge.handler.handle_message", new_callable=AsyncMock) as mock_msg, \
+             patch("acp_bridge.handler.is_session_creating", return_value=True):
+            await handle_event(
+                event, feishu, FakeConfig(), FakeAgentManager(),
+                FakeSessionManager(), {}, None,
+            )
+            mock_msg.assert_called_once()
+            assert mock_msg.call_args[0][0][0].root_id == "root1"
+
     # ---- Test 2: no session + @bot + plain text → handle_message called ----
 
     @pytest.mark.asyncio

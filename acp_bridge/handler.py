@@ -7,7 +7,7 @@ from acp_bridge.agent import AgentManager
 from acp_bridge.config import Config
 from acp_bridge.feishu import FeishuConnection, FeishuEvent
 from acp_bridge.handler_command import handle_command
-from acp_bridge.handler_message import handle_message
+from acp_bridge.handler_message import handle_message, is_session_creating
 from acp_bridge.handler_permission import handle_permission_response
 from acp_bridge.session import SessionManager
 
@@ -71,6 +71,19 @@ async def handle_event(
                 notification_flush_callback,
             )
     else:
+        # Session being created — forward so it waits on the init lock
+        if is_session_creating(root_message_id):
+            logger.info("[%s] Forwarded (session creating)", msg_id)
+            await handle_message(
+                [event],
+                feishu,
+                config,
+                agent_manager,
+                session_manager,
+                notification_flush_callback,
+            )
+            return
+
         if not event.is_mention_bot:
             if event.chat_type != "p2p":
                 logger.info("[%s] Ignored: not mentioned in group", msg_id)
