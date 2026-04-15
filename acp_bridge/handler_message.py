@@ -83,6 +83,8 @@ async def handle_message(
         session_manager.set_busy(root_message_id, True)
         early_reaction_id = None
 
+    session.reply_to_message_id = reply_id
+
     _start_prompt(
         session,
         events,

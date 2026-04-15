@@ -390,6 +390,7 @@ async def _flush_agent_chunks(
         return
 
     root_message_id, session = info
+    reply_to = session.reply_to_message_id or root_message_id
 
     if session_id in agent_text_chunks and agent_text_chunks[session_id]:
         text = agent_text_chunks.pop(session_id)
@@ -426,7 +427,7 @@ async def _flush_agent_chunks(
                     continue
                 try:
                     img_count += 1
-                    msg_id = await feishu.send_image(session.conversation_id, root_message_id, abs_path)
+                    msg_id = await feishu.send_image(session.conversation_id, reply_to, abs_path)
                     if msg_id:
                         session.last_bot_message_id = msg_id
                     text = text.replace(full_match, f'[pic{img_count}]')
@@ -438,7 +439,7 @@ async def _flush_agent_chunks(
                     with open(abs_path, "rb") as fh:
                         data = fh.read()
                     msg_id = await feishu.upload_file(
-                        session.conversation_id, root_message_id, data, os.path.basename(abs_path)
+                        session.conversation_id, reply_to, data, os.path.basename(abs_path)
                     )
                     if msg_id:
                         session.last_bot_message_id = msg_id
@@ -447,14 +448,14 @@ async def _flush_agent_chunks(
                     logger.warning("Failed to send file %s", abs_path, exc_info=True)
 
         if text:
-            msg_id = await feishu.send_message(session.conversation_id, root_message_id, text)
+            msg_id = await feishu.send_message(session.conversation_id, reply_to, text)
             if msg_id:
                 session.last_bot_message_id = msg_id
 
     if session_id in agent_thought_chunks and agent_thought_chunks[session_id]:
         text = agent_thought_chunks.pop(session_id)
         thought_text = "\n".join(f"> {line}" for line in text.splitlines())
-        msg_id = await feishu.send_message(session.conversation_id, root_message_id, thought_text)
+        msg_id = await feishu.send_message(session.conversation_id, reply_to, thought_text)
         if msg_id:
             session.last_bot_message_id = msg_id
 
@@ -470,7 +471,8 @@ async def _send_tool_msg(
     if info is None:
         return
     key, s = info
-    msg_id = await feishu.send_message(s.conversation_id, key, msg)
+    reply_to = s.reply_to_message_id or key
+    msg_id = await feishu.send_message(s.conversation_id, reply_to, msg)
     if msg_id:
         s.last_bot_message_id = msg_id
 

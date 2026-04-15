@@ -22,6 +22,7 @@ class SessionState:
     summary: str = ""
     last_active: float = 0.0
     last_bot_message_id: str = ""
+    reply_to_message_id: str = ""  # message_id of the trigger msg for replies
     # User -> Agent buffer: messages that arrive while agent is busy.
     message_buffer: list[FeishuEvent] = field(default_factory=list)
 
