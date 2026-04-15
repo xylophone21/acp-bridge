@@ -31,6 +31,28 @@ from acp_bridge.utils import safe_backticks
 logger = logging.getLogger(__name__)
 
 
+def _pretty_raw(data: Any) -> str:
+    """Format raw data for logging: readable, no double-escaped JSON."""
+    if isinstance(data, str):
+        return data
+    data = _unescape_json_strings(data)
+    return json.dumps(data, indent=2, ensure_ascii=False)
+
+
+def _unescape_json_strings(obj: Any) -> Any:
+    """Recursively try to parse JSON strings inside dicts/lists so they print cleanly."""
+    if isinstance(obj, str):
+        try:
+            return _unescape_json_strings(json.loads(obj))
+        except (json.JSONDecodeError, TypeError):
+            return obj
+    if isinstance(obj, dict):
+        return {k: _unescape_json_strings(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_unescape_json_strings(i) for i in obj]
+    return obj
+
+
 async def _handle_evicted_sessions(
     expired: list,
     agent_manager: AgentManager,
@@ -120,19 +142,37 @@ async def run_bridge(config: Config):
             msg += "\n" + _format_raw_data("Input", start.raw_input)
         await _send_tool_msg(feishu, session_manager, session_id, msg)
 
+    def _log_accumulated_chunks(session_id: str, text_chunks: dict, thought_chunks: dict) -> None:
+        """Log accumulated text/thought chunks when switching to a different notification type."""
+        text = text_chunks.get(session_id, "")
+        if text:
+            logger.info("[RESP] [%s] Agent response (%d chars):\n%s", session_id[:8], len(text), text[:2000])
+        thought = thought_chunks.get(session_id, "")
+        if thought:
+            logger.info("[THINK] [%s] Agent thought (%d chars):\n%s", session_id[:8], len(thought), thought[:2000])
+
     async def on_notification(session_id: str, update):
         """Handle agent session notifications (message chunks, tool calls, etc.)."""
         if isinstance(update, AgentMessageChunk):
             await _flush_pending_tool_start(session_id)
             if isinstance(update.content, TextContentBlock):
+                if session_id not in agent_text_chunks or not agent_text_chunks[session_id]:
+                    logger.info("[RESP] [%s] Agent responding...", session_id[:8])
                 agent_text_chunks[session_id] += update.content.text or ""
         elif isinstance(update, AgentThoughtChunk):
             if config.bridge.show_thinking:
                 if isinstance(update.content, TextContentBlock):
+                    if session_id not in agent_thought_chunks or not agent_thought_chunks[session_id]:
+                        logger.info("[THINK] [%s] Agent thinking...", session_id[:8])
                     agent_thought_chunks[session_id] += update.content.text or ""
         elif isinstance(update, ToolCallStart):
-            if update.raw_input and update.title:
-                logger.debug("🔧 [%s] %s", session_id[:8], update.title)
+            _log_accumulated_chunks(session_id, agent_text_chunks, agent_thought_chunks)
+            title = update.title or ""
+            if update.raw_input:
+                raw = _pretty_raw(update.raw_input)
+                logger.info("[TOOL] [%s] %s\n  input: %s", session_id[:8], title[:20], raw[:2000])
+            elif title:
+                logger.info("[TOOL] [%s] %s", session_id[:8], title[:20])
             if config.bridge.show_intermediate:
                 prev = pending_tool_start.get(session_id)
                 if prev is not None and prev.tool_call_id != update.tool_call_id:
@@ -159,16 +199,15 @@ async def run_bridge(config: Config):
                 agent_thought_chunks.pop(session_id, None)
         elif isinstance(update, ToolCallProgress):
             if update.status in ("completed", "failed"):
-                icon = "✅" if update.status == "completed" else "❌"
+                icon = "[DONE]" if update.status == "completed" else "[FAIL]"
                 if update.raw_output:
-                    out = (
-                        json.dumps(update.raw_output, ensure_ascii=False)
-                        if not isinstance(update.raw_output, str)
-                        else update.raw_output
+                    out = _pretty_raw(update.raw_output)
+                    logger.info(
+                        "%s [%s] %s\n  output (%d chars): %s",
+                        icon, session_id[:8], (update.title or "")[:20], len(out), out[:2000],
                     )
-                    logger.debug("%s [%s] %s | output: %s", icon, session_id[:8], update.title, out[:500])
                 else:
-                    logger.debug("%s [%s] %s", icon, session_id[:8], update.title)
+                    logger.info("%s [%s] %s", icon, session_id[:8], (update.title or "")[:20])
             if config.bridge.show_intermediate:
                 await _flush_pending_tool_start(session_id)
                 parts: list[str] = []
@@ -237,11 +276,7 @@ async def run_bridge(config: Config):
             if title:
                 parts.append(f"\n🔧 {title}")
             if raw_input:
-                detail = (
-                    json.dumps(raw_input, indent=2, ensure_ascii=False)
-                    if not isinstance(raw_input, str)
-                    else raw_input
-                )
+                detail = _pretty_raw(raw_input)
                 if len(detail) > 500:
                     detail = detail[:500] + "\n... (truncated)"
                 fence = safe_backticks(detail)
@@ -258,6 +293,7 @@ async def run_bridge(config: Config):
     agent_manager.register_agents([config.agent])
 
     async def notification_flush_callback(session_id: str):
+        _log_accumulated_chunks(session_id, agent_text_chunks, agent_thought_chunks)
         await _flush_agent_chunks(session_id, feishu, session_manager, agent_text_chunks, agent_thought_chunks, config)
 
     # Fetch bot info before starting WebSocket
@@ -357,7 +393,6 @@ async def _flush_agent_chunks(
 
     if session_id in agent_text_chunks and agent_text_chunks[session_id]:
         text = agent_text_chunks.pop(session_id)
-        logger.debug("💬 [%s] %s", session_id[:8], text[:200].replace("\n", "\\n"))
 
         # Detect markdown links: ![alt](path) and [text](path)
         # Upload images via send_image, other files via upload_file
@@ -449,12 +484,12 @@ def _format_plan(entries: list[dict]) -> str:
     return "\n".join(lines)
 
 
-_RAW_DATA_MAX = 1000
+_RAW_DATA_MAX = 4000
 
 
 def _format_raw_data(label: str, data: Any) -> str:
     """Format raw_input / raw_output as a fenced code block."""
-    text = json.dumps(data, indent=2, ensure_ascii=False) if not isinstance(data, str) else data
+    text = json.dumps(_unescape_json_strings(data), indent=2, ensure_ascii=False) if not isinstance(data, str) else data
     if len(text) > _RAW_DATA_MAX:
         text = text[:_RAW_DATA_MAX] + "\n... (truncated)"
     fence = safe_backticks(text)

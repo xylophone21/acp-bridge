@@ -219,9 +219,13 @@ def _start_prompt(
                         resolve_parent=new_session,
                     )
                 content.append({"type": "text", "text": f"[Current user: {identity}]\n{text}"})
-            logger.debug("[%s] Sending prompt to agent: %.500s", reply_id, content)
+            logger.info("[%s] Sending prompt to agent (%d items, %d chars):\n%s",
+                        reply_id,
+                        len(content),
+                        sum(len(c.get("text", "")) for c in content),
+                        "\n---\n".join(c.get("text", "") for c in content)[:3000])
             result = await agent_manager.prompt(session.session_id, content)
-            logger.debug("Prompt completed: stop_reason=%s", result.get("stopReason"))
+            logger.info("Prompt completed: stop_reason=%s", result.get("stopReason"))
             if notification_flush_callback:
                 await notification_flush_callback(session.session_id)
         except Exception as e:
