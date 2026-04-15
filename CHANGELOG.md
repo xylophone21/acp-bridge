@@ -1,6 +1,25 @@
 # CHANGELOG
 
 
+## v1.3.2 (2026-04-15)
+
+### Bug Fixes
+
+- Messages without @bot dropped during session creation
+  ([`1ad8827`](https://github.com/xylophone21/acp-bridge/commit/1ad88276afff0322625ee899e922ad7d8d396c52))
+
+- Preserve agent text when prompt ends with plan tool calls
+  ([`633bca3`](https://github.com/xylophone21/acp-bridge/commit/633bca3449743e274ac0479a25a474468a26d930))
+
+- Reply to trigger message instead of root message
+  ([`fffd6dc`](https://github.com/xylophone21/acp-bridge/commit/fffd6dc602dc7ad8d6186c8e0437b4736325014e))
+
+### Refactoring
+
+- Improve logging readability and reduce truncation
+  ([`9afa779`](https://github.com/xylophone21/acp-bridge/commit/9afa77906e4a16967e92a869f310a24b97d4d9b2))
+
+
 ## v1.3.1 (2026-04-08)
 
 ### Bug Fixes
