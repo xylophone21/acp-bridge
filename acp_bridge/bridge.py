@@ -118,6 +118,11 @@ async def run_bridge(config: Config):
     agent_text_chunks: dict[str, str] = defaultdict(str)
     agent_thought_chunks: dict[str, str] = defaultdict(str)
 
+    # Sessions with pending text clear — set when a tool call interrupts
+    # the text stream. Cleared (and text discarded) when the next chunk
+    # arrives. If no new chunk arrives, the text survives to final flush.
+    pending_text_clear: set[str] = set()
+
     # Pending ToolCallStart per session — buffered until a different event arrives
     # or the tool completes, so multiple ToolCallStart updates for the same tool
     # are collapsed into a single message.
@@ -142,37 +147,46 @@ async def run_bridge(config: Config):
             msg += "\n" + _format_raw_data("Input", start.raw_input)
         await _send_tool_msg(feishu, session_manager, session_id, msg)
 
-    def _log_accumulated_chunks(session_id: str, text_chunks: dict, thought_chunks: dict) -> None:
+    def _log_accumulated_chunks(session_id: str, text_chunks: dict, thought_chunks: dict,
+                                *, final: bool = False) -> None:
         """Log accumulated text/thought chunks when switching to a different notification type."""
+        tag = "FINAL" if final else "FLUSH"
         text = text_chunks.get(session_id, "")
         if text:
-            logger.info("[RESP] [%s] Agent response (%d chars):\n%s", session_id[:8], len(text), text[:2000])
+            logger.info("[%s] [%s] Accumulated text (%d chars):\n%s",
+                        tag, session_id[:8], len(text), text[:2000])
         thought = thought_chunks.get(session_id, "")
         if thought:
-            logger.info("[THINK] [%s] Agent thought (%d chars):\n%s", session_id[:8], len(thought), thought[:2000])
+            logger.info("[%s] [%s] Accumulated thought (%d chars):\n%s",
+                        tag, session_id[:8], len(thought), thought[:2000])
 
     async def on_notification(session_id: str, update):
         """Handle agent session notifications (message chunks, tool calls, etc.)."""
         if isinstance(update, AgentMessageChunk):
             await _flush_pending_tool_start(session_id)
             if isinstance(update.content, TextContentBlock):
+                # Lazy clear: discard old text on first new chunk after a tool call.
+                if session_id in pending_text_clear:
+                    agent_text_chunks.pop(session_id, None)
+                    pending_text_clear.discard(session_id)
                 if session_id not in agent_text_chunks or not agent_text_chunks[session_id]:
-                    logger.info("[RESP] [%s] Agent responding...", session_id[:8])
+                    logger.info("[RESP] [%s] Agent responding (first chunk)...", session_id[:8])
                 agent_text_chunks[session_id] += update.content.text or ""
         elif isinstance(update, AgentThoughtChunk):
             if config.bridge.show_thinking:
                 if isinstance(update.content, TextContentBlock):
                     if session_id not in agent_thought_chunks or not agent_thought_chunks[session_id]:
-                        logger.info("[THINK] [%s] Agent thinking...", session_id[:8])
+                        logger.info("[THINK] [%s] Agent thinking (first chunk)...", session_id[:8])
                     agent_thought_chunks[session_id] += update.content.text or ""
         elif isinstance(update, ToolCallStart):
-            _log_accumulated_chunks(session_id, agent_text_chunks, agent_thought_chunks)
+            if session_id not in pending_text_clear:
+                _log_accumulated_chunks(session_id, agent_text_chunks, agent_thought_chunks)
             title = update.title or ""
             if update.raw_input:
                 raw = _pretty_raw(update.raw_input)
-                logger.info("[TOOL] [%s] %s\n  input: %s", session_id[:8], title[:20], raw[:2000])
+                logger.info("[TOOL] [%s] %s\n  input: %s", session_id[:8], title[:80], raw[:2000])
             elif title:
-                logger.info("[TOOL] [%s] %s", session_id[:8], title[:20])
+                logger.info("[TOOL] [%s] %s", session_id[:8], title[:80])
             if config.bridge.show_intermediate:
                 prev = pending_tool_start.get(session_id)
                 if prev is not None and prev.tool_call_id != update.tool_call_id:
@@ -195,7 +209,12 @@ async def run_bridge(config: Config):
                     # No parameters yet — buffer and wait for a richer update.
                     pending_tool_start[session_id] = update
             else:
-                agent_text_chunks.pop(session_id, None)
+                # Don't discard text immediately — mark for lazy clear.
+                # If the agent produces new text after this tool call,
+                # the old text is cleared on the first new chunk.
+                # If not (e.g. agent ends with a plan-complete tool),
+                # the text survives to final flush.
+                pending_text_clear.add(session_id)
                 agent_thought_chunks.pop(session_id, None)
         elif isinstance(update, ToolCallProgress):
             if update.status in ("completed", "failed"):
@@ -204,10 +223,10 @@ async def run_bridge(config: Config):
                     out = _pretty_raw(update.raw_output)
                     logger.info(
                         "%s [%s] %s\n  output (%d chars): %s",
-                        icon, session_id[:8], (update.title or "")[:20], len(out), out[:2000],
+                        icon, session_id[:8], (update.title or "")[:80], len(out), out[:2000],
                     )
                 else:
-                    logger.info("%s [%s] %s", icon, session_id[:8], (update.title or "")[:20])
+                    logger.info("%s [%s] %s", icon, session_id[:8], (update.title or "")[:80])
             if config.bridge.show_intermediate:
                 await _flush_pending_tool_start(session_id)
                 parts: list[str] = []
@@ -293,7 +312,8 @@ async def run_bridge(config: Config):
     agent_manager.register_agents([config.agent])
 
     async def notification_flush_callback(session_id: str):
-        _log_accumulated_chunks(session_id, agent_text_chunks, agent_thought_chunks)
+        _log_accumulated_chunks(session_id, agent_text_chunks, agent_thought_chunks, final=True)
+        pending_text_clear.discard(session_id)
         await _flush_agent_chunks(session_id, feishu, session_manager, agent_text_chunks, agent_thought_chunks, config)
 
     # Fetch bot info before starting WebSocket
