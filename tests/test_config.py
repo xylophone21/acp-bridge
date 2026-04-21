@@ -105,7 +105,7 @@ command = "c"
 """)
         config = Config.load(str(config_file))
         assert config.bridge.max_sessions == 10
-        assert config.bridge.session_ttl_minutes == 60
+        assert config.bridge.session_ttl_minutes == 720
 
 
 class TestConfigInit:
@@ -214,4 +214,4 @@ command = "echo"
     if include_session_ttl:
         assert config.bridge.session_ttl_minutes == session_ttl_val
     else:
-        assert config.bridge.session_ttl_minutes == 60
+        assert config.bridge.session_ttl_minutes == 720

@@ -23,34 +23,17 @@ from acp.schema import (
 
 from acp_bridge.agent import AgentManager
 from acp_bridge.config import Config
+from acp_bridge.evaluator import (
+    find_matching_evaluator,
+    on_eval_notification,
+    run_evaluation,
+)
 from acp_bridge.feishu import FeishuConnection, FeishuEvent
 from acp_bridge.handler import handle_event
 from acp_bridge.session import SessionManager
-from acp_bridge.utils import safe_backticks
+from acp_bridge.utils import pretty_raw, safe_backticks, unescape_json_strings
 
 logger = logging.getLogger(__name__)
-
-
-def _pretty_raw(data: Any) -> str:
-    """Format raw data for logging: readable, no double-escaped JSON."""
-    if isinstance(data, str):
-        return data
-    data = _unescape_json_strings(data)
-    return json.dumps(data, indent=2, ensure_ascii=False)
-
-
-def _unescape_json_strings(obj: Any) -> Any:
-    """Recursively try to parse JSON strings inside dicts/lists so they print cleanly."""
-    if isinstance(obj, str):
-        try:
-            return _unescape_json_strings(json.loads(obj))
-        except (json.JSONDecodeError, TypeError):
-            return obj
-    if isinstance(obj, dict):
-        return {k: _unescape_json_strings(v) for k, v in obj.items()}
-    if isinstance(obj, list):
-        return [_unescape_json_strings(i) for i in obj]
-    return obj
 
 
 async def _handle_evicted_sessions(
@@ -60,6 +43,13 @@ async def _handle_evicted_sessions(
 ) -> None:
     """Process evicted sessions: terminate agent processes and add DONE reactions."""
     for session in expired:
+        # Clean up evaluator sessions bound to this session
+        for ev_sid in session.evaluator_session_ids.values():
+            try:
+                await agent_manager.end_session(ev_sid)
+            except Exception as e:
+                logger.warning("Failed to end evaluator session %s: %s", ev_sid, e)
+
         try:
             await agent_manager.end_session(session.session_id)
         except Exception as e:
@@ -183,7 +173,7 @@ async def run_bridge(config: Config):
                 _log_accumulated_chunks(session_id, agent_text_chunks, agent_thought_chunks)
             title = update.title or ""
             if update.raw_input:
-                raw = _pretty_raw(update.raw_input)
+                raw = pretty_raw(update.raw_input)
                 logger.info("[TOOL] [%s] %s\n  input: %s", session_id[:8], title[:80], raw[:2000])
             elif title:
                 logger.info("[TOOL] [%s] %s", session_id[:8], title[:80])
@@ -220,7 +210,7 @@ async def run_bridge(config: Config):
             if update.status in ("completed", "failed"):
                 icon = "[DONE]" if update.status == "completed" else "[FAIL]"
                 if update.raw_output:
-                    out = _pretty_raw(update.raw_output)
+                    out = pretty_raw(update.raw_output)
                     logger.info(
                         "%s [%s] %s\n  output (%d chars): %s",
                         icon, session_id[:8], (update.title or "")[:80], len(out), out[:2000],
@@ -295,7 +285,7 @@ async def run_bridge(config: Config):
             if title:
                 parts.append(f"\n🔧 {title}")
             if raw_input:
-                detail = _pretty_raw(raw_input)
+                detail = pretty_raw(raw_input)
                 if len(detail) > 500:
                     detail = detail[:500] + "\n... (truncated)"
                 fence = safe_backticks(detail)
@@ -308,12 +298,79 @@ async def run_bridge(config: Config):
         pending_permissions[root_message_id] = {"options": options, "future": future}
         return await future
 
-    agent_manager = AgentManager(on_notification, on_permission)
+    async def _on_notification(session_id: str, update) -> None:
+        # Main agent sessions are tracked in SessionManager; others are evaluator sessions
+        if session_manager.find_by_session_id(session_id):
+            await on_notification(session_id, update)
+        else:
+            await on_eval_notification(session_id, update)
+
+    agent_manager = AgentManager(_on_notification, on_permission)
     agent_manager.register_agents([config.agent])
 
     async def notification_flush_callback(session_id: str):
         _log_accumulated_chunks(session_id, agent_text_chunks, agent_thought_chunks, final=True)
         pending_text_clear.discard(session_id)
+
+        # --- Evaluator quality gate ---
+        agent_text = agent_text_chunks.get(session_id, "")
+        evaluator_cfg = find_matching_evaluator(agent_text, config) if agent_text else None
+
+        if evaluator_cfg is not None:
+            info = session_manager.find_by_session_id(session_id)
+            if not info:
+                logger.warning("[EVAL] Session not found for %s, skipping evaluation", session_id[:8])
+            else:
+                root_key, sess = info
+                reply_to = sess.reply_to_message_id or root_key
+                conversation_id = sess.conversation_id
+
+                for attempt in range(1, evaluator_cfg.max_retries + 1):
+                    logger.info("[EVAL] Attempt %d/%d for session %s",
+                                attempt, evaluator_cfg.max_retries, session_id[:8])
+
+                    if config.bridge.show_intermediate and conversation_id and reply_to:
+                        await feishu.send_message(
+                            conversation_id, reply_to,
+                            f"🔍 质量评估中... ({attempt}/{evaluator_cfg.max_retries})",
+                        )
+
+                    passed, feedback = await run_evaluation(
+                        agent_text, evaluator_cfg, sess, agent_manager
+                    )
+
+                    if passed:
+                        logger.info("[EVAL] PASS on attempt %d", attempt)
+                        break
+
+                    logger.info("[EVAL] FAIL on attempt %d: %s", attempt, feedback[:500])
+
+                    if attempt >= evaluator_cfg.max_retries:
+                        logger.warning("[EVAL] Max retries reached, sending with warning")
+                        agent_text_chunks[session_id] = (
+                            agent_text + "\n\n> ⚠️ 此回答未通过自动质量评估，请注意核实。"
+                        )
+                        break
+
+                    # Send feedback to original agent for revision
+                    retry_prompt = evaluator_cfg.retry_prompt.format(feedback=feedback)
+                    content = [{"type": "text", "text": retry_prompt}]
+                    try:
+                        # Clear old chunks before re-prompting
+                        agent_text_chunks.pop(session_id, None)
+                        agent_thought_chunks.pop(session_id, None)
+
+                        await agent_manager.prompt(session_id, content)
+
+                        # Collect the new response (prompt triggers on_notification which fills chunks)
+                        agent_text = agent_text_chunks.get(session_id, "")
+                        if not agent_text:
+                            logger.warning("[EVAL] Agent returned empty response on retry")
+                            break
+                    except Exception as e:
+                        logger.warning("[EVAL] Retry prompt failed: %s", e)
+                        break
+
         await _flush_agent_chunks(session_id, feishu, session_manager, agent_text_chunks, agent_thought_chunks, config)
 
     # Fetch bot info before starting WebSocket
@@ -511,7 +568,7 @@ _RAW_DATA_MAX = 4000
 
 def _format_raw_data(label: str, data: Any) -> str:
     """Format raw_input / raw_output as a fenced code block."""
-    text = json.dumps(_unescape_json_strings(data), indent=2, ensure_ascii=False) if not isinstance(data, str) else data
+    text = json.dumps(unescape_json_strings(data), indent=2, ensure_ascii=False) if not isinstance(data, str) else data
     if len(text) > _RAW_DATA_MAX:
         text = text[:_RAW_DATA_MAX] + "\n... (truncated)"
     fence = safe_backticks(text)

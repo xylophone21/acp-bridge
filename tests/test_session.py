@@ -56,6 +56,14 @@ def _make_session(session_id="s1", channel="ch1", busy=False,
 
 class TestSessionManagerBasic:
     @pytest.mark.asyncio
+    async def test_eval_lock_is_per_session(self):
+        """Each SessionState gets its own asyncio.Lock instance."""
+        s1 = _make_session(session_id="s1")
+        s2 = _make_session(session_id="s2")
+        assert isinstance(s1.eval_lock, asyncio.Lock)
+        assert s1.eval_lock is not s2.eval_lock
+
+    @pytest.mark.asyncio
     async def test_get_nonexistent_session(self, manager):
         assert manager.get_session_by_root("nope") is None
 

@@ -1,5 +1,6 @@
 """Session manager for tracking chat thread to agent session mappings."""
 
+import asyncio
 import collections
 import logging
 import time
@@ -23,6 +24,8 @@ class SessionState:
     last_active: float = 0.0
     last_bot_message_id: str = ""
     reply_to_message_id: str = ""  # message_id of the trigger msg for replies
+    evaluator_session_ids: dict[str, str] = field(default_factory=dict)  # evaluator_name -> session_id
+    eval_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     # User -> Agent buffer: messages that arrive while agent is busy.
     message_buffer: list[FeishuEvent] = field(default_factory=list)
 

@@ -300,6 +300,44 @@ class TestHandleEvictedSessions:
         feishu.add_reaction.assert_any_call("bot1", "DONE")
 
     @pytest.mark.asyncio
+    async def test_eviction_cleans_up_evaluator_sessions(self):
+        """Evaluator sessions bound to an evicted session are also terminated."""
+        expired_session = SessionState(
+            session_id="s1",
+            conversation_id="ch1",
+            trigger_message_id="trigger1",
+            evaluator_session_ids={"eval1": "ev-s1", "eval2": "ev-s2"},
+        )
+        agent_manager = AsyncMock()
+        feishu = AsyncMock()
+
+        await _handle_evicted_sessions([expired_session], agent_manager, feishu)
+
+        # Main + 2 evaluator sessions terminated
+        assert agent_manager.end_session.call_count == 3
+        agent_manager.end_session.assert_any_call("ev-s1")
+        agent_manager.end_session.assert_any_call("ev-s2")
+        agent_manager.end_session.assert_any_call("s1")
+
+    @pytest.mark.asyncio
+    async def test_eviction_evaluator_end_error_does_not_block(self):
+        """Failure to end an evaluator session doesn't prevent main session cleanup."""
+        expired_session = SessionState(
+            session_id="s1",
+            conversation_id="ch1",
+            trigger_message_id="trigger1",
+            evaluator_session_ids={"eval1": "ev-s1"},
+        )
+        agent_manager = AsyncMock()
+        agent_manager.end_session.side_effect = [Exception("eval gone"), None]
+        feishu = AsyncMock()
+
+        await _handle_evicted_sessions([expired_session], agent_manager, feishu)
+
+        # Both calls attempted despite first failing
+        assert agent_manager.end_session.call_count == 2
+
+    @pytest.mark.asyncio
     async def test_eviction_skips_reaction_on_no_last_bot_message(self):
         expired_session = SessionState(
             session_id="s2",
@@ -392,6 +430,51 @@ def _session_state_strategy():
         trigger_message_id=st.text(min_size=1, max_size=20, alphabet=st.characters(whitelist_categories=("L", "N"))),
         last_bot_message_id=st.text(min_size=0, max_size=20, alphabet=st.characters(whitelist_categories=("L", "N"))),
     )
+
+
+class TestNotificationRouting:
+    """Test that find_by_session_id correctly distinguishes main vs evaluator sessions,
+    which is the basis for notification routing in _on_notification."""
+
+    def test_main_session_found(self):
+        """Main agent session_id is found by find_by_session_id."""
+        from acp_bridge.config import AgentConfig, BridgeConfig, Config, FeishuConfig
+        from acp_bridge.session import SessionManager
+        config = Config(
+            feishu=FeishuConfig(app_id="id", app_secret="secret"),
+            bridge=BridgeConfig(default_workspace="/tmp", max_sessions=3),
+            agent=AgentConfig(name="k", description="d", command="c", args=[], auto_approve=True),
+        )
+        mgr = SessionManager(config)
+        mgr.create_session("root1", session_id="main-s1", conversation_id="ch1", trigger_text="hi")
+        assert mgr.find_by_session_id("main-s1") is not None
+
+    def test_evaluator_session_not_found(self):
+        """Evaluator session_id is NOT found by find_by_session_id (routes to eval handler)."""
+        from acp_bridge.config import AgentConfig, BridgeConfig, Config, FeishuConfig
+        from acp_bridge.session import SessionManager
+        config = Config(
+            feishu=FeishuConfig(app_id="id", app_secret="secret"),
+            bridge=BridgeConfig(default_workspace="/tmp", max_sessions=3),
+            agent=AgentConfig(name="k", description="d", command="c", args=[], auto_approve=True),
+        )
+        mgr = SessionManager(config)
+        session, _ = mgr.create_session("root1", session_id="main-s1", conversation_id="ch1", trigger_text="hi")
+        session.evaluator_session_ids["eval1"] = "eval-s1"
+        # eval-s1 is not a main session
+        assert mgr.find_by_session_id("eval-s1") is None
+
+    def test_unknown_session_not_found(self):
+        """Completely unknown session_id is not found."""
+        from acp_bridge.config import AgentConfig, BridgeConfig, Config, FeishuConfig
+        from acp_bridge.session import SessionManager
+        config = Config(
+            feishu=FeishuConfig(app_id="id", app_secret="secret"),
+            bridge=BridgeConfig(default_workspace="/tmp", max_sessions=3),
+            agent=AgentConfig(name="k", description="d", command="c", args=[], auto_approve=True),
+        )
+        mgr = SessionManager(config)
+        assert mgr.find_by_session_id("unknown") is None
 
 
 class TestHandleEvictedSessionsProperty:

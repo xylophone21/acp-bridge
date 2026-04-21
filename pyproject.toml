@@ -12,9 +12,11 @@ dependencies = [
     "lark-oapi>=1.5.3",
     "matplotlib>=3.10.8",
     "openpyxl>=3.1.5",
+    "pandas>=3.0.2",
     "pillow>=12.1.1",
     "pyyaml>=6.0.3",
     "pyzbar>=0.1.9",
+    "scipy>=1.17.1",
     "toml>=0.10.2",
 ]
 
