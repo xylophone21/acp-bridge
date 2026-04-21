@@ -14,6 +14,7 @@ Core features:
 - Message threading via reply chains — reply to any message in a thread to continue the conversation
 - LRU + TTL session management — automatic eviction of idle sessions to control resource usage
 - Message buffering — messages sent while the agent is busy are queued and delivered in order
+- Evaluator quality gate — optional independent agent review of responses before sending to users
 
 ## Installation
 
@@ -68,16 +69,32 @@ Core features:
    output_dir = "tmp/output"        # Where agent output files (images, scripts) are saved
    auto_approve = false             # Auto-approve all tool permission requests
    max_sessions = 10                # Max concurrent agent sessions (LRU eviction)
-   session_ttl_minutes = 60         # Idle session timeout
+   session_ttl_minutes = 720        # Idle session timeout
    show_thinking = false            # Forward agent thinking/reasoning to user
    show_intermediate = false        # Forward intermediate tool output to user
 
    [agent]
    name = "kiro"                    # Agent identifier
    description = "Kiro CLI - https://kiro.dev/cli/"
-   command = "kiro-cli"             # Command to spawn the agent process
+   # command = "kiro-cli"           # Command to spawn the agent process (default: kiro-cli)
    args = ["acp"]                   # Command arguments
-   auto_approve = false             # Auto-approve at agent level
+   auto_approve = true              # Auto-approve at agent level
+
+   [[evaluator]]                    # Optional: quality gate for agent responses
+   name = "my-evaluator"            # Evaluator identifier
+   trigger_pattern = "Conclusion|Result|Finding" # Regex to match agent response, triggers evaluation
+   # command = "kiro-cli"           # Inherits from [agent].command if empty
+   args = ["acp", "--agent", "my-evaluator"] # Spawns a separate agent process
+   # workspace = ""                 # Inherits from bridge.default_workspace if empty
+   # auto_approve = true            # Inherits from [agent].auto_approve if not set
+   prompt = "Please evaluate the following report" # Prepended to agent text sent to evaluator
+   pass_pattern = "(?mi)^\\s*RESULT\\s*:\\s*PASS\\s*$" # Regex to match evaluator PASS verdict
+   max_retries = 2                  # Retry count on FAIL before sending with warning
+   retry_prompt = """The evaluator found issues with your previous response
+   Please revise and output the complete response again from the beginning
+   (do not only output the changed parts):
+
+   {feedback}"""
    ```
 
 4. Start the service:
@@ -128,6 +145,23 @@ For Kiro CLI, add to `.kiro/agents/cli.json`:
 The agent generates a chart → saves to `bridge/tmp/output/trend.png` → responds with `![trend](bridge/tmp/output/trend.png)` → bridge uploads the image to Feishu and replaces the markdown with `[pic1]` in the text message.
 
 Similarly, `[deploy script](bridge/tmp/output/deploy.sh)` → bridge uploads the file and replaces the markdown with `[file1]`.
+
+## Evaluator
+
+The bridge supports an optional evaluator quality gate. When configured, agent responses are reviewed by a separate evaluator agent before being sent to the user.
+
+Flow:
+
+1. Agent completes a response
+2. Bridge checks `trigger_pattern` against the response text
+3. If matched, spawns (or reuses) an evaluator agent session and sends the response for review
+4. Evaluator responds with a verdict — if it matches `pass_pattern`, the response is sent to the user
+5. If FAIL, the evaluator's feedback is sent back to the original agent for revision
+6. Retries up to `max_retries` times, then sends with a warning
+
+Evaluator sessions are persistent per main session, so retries share context. The evaluator agent is a separate process with its own system prompt and tools — it can use read-only tools to spot-check evidence in the report.
+
+Notification routing: the bridge distinguishes main agent sessions from evaluator sessions via `SessionManager.find_by_session_id()` — main sessions are tracked in the session manager, everything else is routed to the evaluator notification handler.
 
 ## Commands
 
