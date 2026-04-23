@@ -133,6 +133,13 @@ class SessionManager:
                 return (key, s)
         return None
 
+    def find_by_eval_session_id(self, session_id: str) -> Optional[tuple[str, SessionState]]:
+        """Find the parent main session that owns this evaluator session."""
+        for key, s in self._sessions.items():
+            if session_id in s.evaluator_session_ids.values():
+                return (key, s)
+        return None
+
     def update_config_options(self, key: str, config_options: list):
         s = self._sessions.get(key)
         if s is None:

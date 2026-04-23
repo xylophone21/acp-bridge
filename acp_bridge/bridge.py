@@ -264,18 +264,21 @@ async def run_bridge(config: Config):
 
     async def on_permission(session_id: str, options: list[PermissionOption], tool_call: Any = None) -> Optional[str]:
         """Handle permission requests from agents."""
+        if agent_manager.is_auto_approve(session_id):
+            if options:
+                return options[0].option_id
+            return None
+
         info = session_manager.find_by_session_id(session_id)
+        if info is None:
+            # Evaluator session: route permission to its parent main session
+            info = session_manager.find_by_eval_session_id(session_id)
 
         if info is None:
             logger.warning("Session not found for permission: %s", session_id)
             return None
 
         root_message_id, session = info
-
-        if agent_manager.is_auto_approve(session_id):
-            if options:
-                return options[0].option_id
-            return None
 
         # Format and send permission request
         parts = ["⚠️ Permission Required"]
@@ -325,6 +328,7 @@ async def run_bridge(config: Config):
                 reply_to = sess.reply_to_message_id or root_key
                 conversation_id = sess.conversation_id
 
+                last_feedback = ""
                 for attempt in range(1, evaluator_cfg.max_retries + 1):
                     logger.info("[EVAL] Attempt %d/%d for session %s",
                                 attempt, evaluator_cfg.max_retries, session_id[:8])
@@ -344,13 +348,7 @@ async def run_bridge(config: Config):
                         break
 
                     logger.info("[EVAL] FAIL on attempt %d: %s", attempt, feedback[:500])
-
-                    if attempt >= evaluator_cfg.max_retries:
-                        logger.warning("[EVAL] Max retries reached, sending with warning")
-                        agent_text_chunks[session_id] = (
-                            agent_text + "\n\n> ⚠️ 此回答未通过自动质量评估，请注意核实。"
-                        )
-                        break
+                    last_feedback = feedback
 
                     # Send feedback to original agent for revision
                     retry_prompt = evaluator_cfg.retry_prompt.format(feedback=feedback)
@@ -370,6 +368,15 @@ async def run_bridge(config: Config):
                     except Exception as e:
                         logger.warning("[EVAL] Retry prompt failed: %s", e)
                         break
+                else:
+                    # Loop completed without break (all attempts FAIL, all retries done)
+                    if last_feedback:
+                        logger.warning("[EVAL] Max retries reached, sending with warning")
+                        agent_text_chunks[session_id] = (
+                            agent_text
+                            + "\n\n> ⚠️ 此回答未通过自动质量评估，请注意核实。\n\n"
+                            + last_feedback
+                        )
 
         await _flush_agent_chunks(session_id, feishu, session_manager, agent_text_chunks, agent_thought_chunks, config)
 
