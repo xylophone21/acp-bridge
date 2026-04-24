@@ -46,7 +46,10 @@ class EvaluatorConfig:
     env: dict[str, str] = field(default_factory=dict)  # fallback to [agent].env
     workspace: str = ""  # fallback to bridge.default_workspace
     auto_approve: bool | None = None  # fallback to [agent].auto_approve
-    prompt: str = "Please evaluate the following report"  # prepended to agent text when sending to evaluator
+    prompt: str = (  # prepended to agent text when sending to evaluator
+        "Please evaluate the following report.\n"
+        "End the final text response with a standalone line: RESULT: PASS or RESULT: FAIL."
+    )
     pass_pattern: str = r"(?mi)^\s*RESULT\s*:\s*PASS\s*$"  # regex to match evaluator response, means passed
     max_retries: int = 2
     retry_prompt: str = (  # prompt to ask main agent to retry

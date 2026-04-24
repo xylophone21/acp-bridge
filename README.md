@@ -87,7 +87,9 @@ Core features:
    args = ["acp", "--agent", "my-evaluator"] # Spawns a separate agent process
    # workspace = ""                 # Inherits from bridge.default_workspace if empty
    # auto_approve = true            # Inherits from [agent].auto_approve if not set
-   prompt = "Please evaluate the following report" # Prepended to agent text sent to evaluator
+   # Prepended to agent text sent to evaluator
+   prompt = """Please evaluate the following report.
+   End the final text response with a standalone line: RESULT: PASS or RESULT: FAIL.""" 
    pass_pattern = "(?mi)^\\s*RESULT\\s*:\\s*PASS\\s*$" # Regex to match evaluator PASS verdict
    max_retries = 2                  # Retry count on FAIL before sending with warning
    retry_prompt = """The evaluator found issues with your previous response
@@ -160,6 +162,8 @@ Flow:
 6. Retries up to `max_retries` times, then sends with a warning
 
 Evaluator sessions are persistent per main session, so retries share context. The evaluator agent is a separate process with its own system prompt and tools — it can use read-only tools to spot-check evidence in the report.
+
+The bridge applies `pass_pattern` to the evaluator's final text response. Keep the evaluator prompt aligned with that pattern; for example, the config above expects a standalone `RESULT: PASS` line. Verdicts written only in tool calls, task context, plans, or other intermediate state are not matched.
 
 Notification routing: the bridge distinguishes main agent sessions from evaluator sessions via `SessionManager.find_by_session_id()` — main sessions are tracked in the session manager, everything else is routed to the evaluator notification handler.
 
