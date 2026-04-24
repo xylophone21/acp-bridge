@@ -1,6 +1,40 @@
 # CHANGELOG
 
 
+## v1.4.0 (2026-04-24)
+
+### Bug Fixes
+
+- Add default evaluator prompt to enforce explicit result output
+  ([`19f1aef`](https://github.com/xylophone21/acp-bridge/commit/19f1aeff32be5f371e199d2aa9845a405a235c8a))
+
+- Evaluator permission routing and retry feedback
+  ([`432810f`](https://github.com/xylophone21/acp-bridge/commit/432810fec5f1920d9647d739e4ad55a45967b8bd))
+
+- route evaluator session permission requests to parent main session - check auto_approve before
+  session lookup to avoid unnecessary search - attach evaluator feedback when max retries reached
+  instead of discarding it
+
+- Restore final evaluator feedback behavior
+  ([`e37286c`](https://github.com/xylophone21/acp-bridge/commit/e37286cc10a836f588241b0e72db6b7ea0e24930))
+
+### Documentation
+
+- Add evaluator section and update config defaults in README
+  ([`95df6fd`](https://github.com/xylophone21/acp-bridge/commit/95df6fd9d889f7899f7111cc420ed7a61e751d5d))
+
+### Features
+
+- Add evaluator quality gate for agent responses
+  ([`b40c17c`](https://github.com/xylophone21/acp-bridge/commit/b40c17c1fd9e6ee797b55dbfe857af8f4d389725))
+
+- Add evaluator module with configurable trigger/pass patterns and retry logic - Route notifications
+  via SessionManager.find_by_session_id instead of global eval_session_ids set - Add eval_lock to
+  SessionState to prevent concurrent evaluator session creation - Generate init config from
+  dataclass defaults instead of hardcoded template - Update EvaluatorConfig with sensible defaults
+  for all fields - Add tests for notification routing, evaluator session cleanup, and eval_lock
+
+
 ## v1.3.2 (2026-04-15)
 
 ### Bug Fixes
