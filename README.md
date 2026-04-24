@@ -158,8 +158,8 @@ Flow:
 2. Bridge checks `trigger_pattern` against the response text
 3. If matched, spawns (or reuses) an evaluator agent session and sends the response for review
 4. Evaluator responds with a verdict — if it matches `pass_pattern`, the response is sent to the user
-5. If FAIL, the evaluator's feedback is sent back to the original agent for revision
-6. Retries up to `max_retries` times, then sends with a warning
+5. If FAIL and retries remain, the evaluator's feedback is sent back to the original agent for revision
+6. If the final allowed evaluation still FAILs, the bridge sends that same evaluated response with a warning plus the final evaluator feedback
 
 Evaluator sessions are persistent per main session, so retries share context. The evaluator agent is a separate process with its own system prompt and tools — it can use read-only tools to spot-check evidence in the report.
 

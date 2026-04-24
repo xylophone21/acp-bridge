@@ -146,7 +146,8 @@ async def run_evaluation(
 
     Returns:
         (True, "") if evaluator response matches pass_pattern.
-        (False, full_response) if not — full response is the feedback for retry.
+        (False, full_response) if not — full response is used as feedback for
+        either the next retry or the final warning sent to the user.
     """
     try:
         eval_session_id = await _get_or_create_eval_session(
